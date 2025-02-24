@@ -58,7 +58,7 @@ public class Student {
         this.number++;
     }
 
-    // Конструктор
+
     public Student(Long id, String firstName) {
         this.id = id;
         this.firstName = firstName;
@@ -94,14 +94,14 @@ public class Student {
         result.append("Финальный результат для ").append(firstName).append(":\n");
 
         if (questions.isEmpty()) {
-            result.append("Вы не ответили ни на один вопрос.");
+            result.append("Bad question");
         } else {
             int size = Math.min(questions.size(), answers.size());
             for (int i = 0; i < size; i++) {
                 result.append("Вопрос: ").append(questions.get(i)).append("\n");
                 result.append("Ваш ответ: ").append(answers.get(i)).append("\n");
             }
-            result.append("Количество правильных ответов: ").append(goodQuestion).append("\n");
+            result.append("Кол-vo правильных отв: ").append(goodQuestion).append("\n");
         }
 
         return result.toString();
