@@ -4,16 +4,16 @@ import java.util.List;
 public class Student {
     private Long id;
     private String firstName;
-    private int number; // Текущий номер вопроса
-    private int goodQuestion; // Количество правильных ответов
-    private List<String> questions; // Список вопросов
-    private List<String> answers; // Список ответов
+    private int number;
+    private int goodQuestion;
+    private List<String> questions;
+    private List<String> answers;
 
     public void reset() {
-        this.number = 0; // Сброс номера вопроса
-        this.goodQuestion = 0; // Сброс количества правильных ответов
-        this.questions.clear(); // Очистка списка вопросов
-        this.answers.clear(); // Очистка списка ответов
+        this.number = 0;
+        this.goodQuestion = 0;
+        this.questions.clear();
+        this.answers.clear();
     }
 
     public Long getId() {
@@ -48,12 +48,12 @@ public class Student {
         this.goodQuestion = goodQuestion;
     }
 
-    // Увеличиваем количество правильных ответов
+
     public void veryGoodQuestion() {
         this.goodQuestion++;
     }
 
-    // Увеличиваем номер текущего вопроса
+
     public void vetynumber() {
         this.number++;
     }
@@ -62,33 +62,33 @@ public class Student {
     public Student(Long id, String firstName) {
         this.id = id;
         this.firstName = firstName;
-        this.number = 0; // Начинаем с первого вопроса
-        this.goodQuestion = 0; // Начальное количество правильных ответов
-        this.questions = new ArrayList<>(); // Инициализируем список вопросов
-        this.answers = new ArrayList<>(); // Инициализируем список ответов
+        this.number = 0;
+        this.goodQuestion = 0;
+        this.questions = new ArrayList<>();
+        this.answers = new ArrayList<>();
     }
 
-    // Добавляем вопрос в список
+
     public void addQuestion(String question) {
         questions.add(question);
     }
 
-    // Добавляем ответ в список
+
     public void addAnswer(String answer) {
         answers.add(answer);
     }
 
-    // Получаем список вопросов
+
     public List<String> getQuestions() {
         return questions;
     }
 
-    // Получаем список ответов
+
     public List<String> getAnswers() {
         return answers;
     }
 
-    // Формируем финальный результат
+
     public String getFinalResult() {
         StringBuilder result = new StringBuilder();
         result.append("Финальный результат для ").append(firstName).append(":\n");

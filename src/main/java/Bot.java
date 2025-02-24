@@ -78,7 +78,6 @@ public class Bot extends TelegramLongPollingBot {
                         return;
                     }
 
-                    // Обработка обычных ответов
                     int questionIndex = student.getNumber();
                     if (questionIndex < listQuestion.size()) {
                         Question question = listQuestion.get(questionIndex);
