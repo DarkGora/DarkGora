@@ -29,7 +29,7 @@ public class Bot extends TelegramLongPollingBot {
 
     public Bot() {
         listQuestion.add(new Question ("Какой из следующих типов данных является примитивным в Java?", List.of("String","Integer","int","ArrayList"), 2));
-        listQuestion.add(new Question ("Какой из следующих операторов используется для сравнения двух значений в Java?", List.of("=","==","===","!="),2));
+        listQuestion.add(new Question ("Какой из следующих операторов используется для сравнения двух значений в Java?", List.of("=","==","===","!="),1));
         listQuestion.add(new Question ("Какой метод используется для запуска программы в Java?", List.of("main()","start()","run()","startJava()"),0));
         listQuestion.add(new Question ("Как останосить case?",List.of("break","stop","stopline","short"),0));
         listQuestion.add(new Question ("Какой из следующих интерфейсов используется для работы с коллекциями в Java?", List.of("List","Map","Eilast","Collection"),0));
@@ -75,7 +75,6 @@ public class Bot extends TelegramLongPollingBot {
                     return;
                 }
                 if ("next_question".equals(callbackData)) {
-                    // Переход к следующему вопросу
                     int nextQuestionIndex = student.getNumber();
                     if (nextQuestionIndex < listQuestion.size()) {
                         sendQuestion(chatId, nextQuestionIndex);
