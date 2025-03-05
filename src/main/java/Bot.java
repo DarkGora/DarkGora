@@ -27,19 +27,32 @@ public class Bot extends TelegramLongPollingBot {
     public static final long GROUP_ID = -1002474189401l;
 
 
-
-
     public Bot() {
-        listQuestion.add(new Question ("Какой из следующих типов данных является примитивным в Java?", List.of("String","Integer","int","ArrayList"), 2));
-        listQuestion.add(new Question ("Какой из следующих операторов используется для сравнения двух значений в Java?", List.of("=","==","===","!="),1));
-        listQuestion.add(new Question ("Какой метод используется для запуска программы в Java?", List.of("main()","start()","run()","startJava()"),0));
-        listQuestion.add(new Question ("Как останосить case?",List.of("break","stop","stopline","short"),3));
-        listQuestion.add(new Question ("Какой из следующих интерфейсов используется для работы с коллекциями в Java?", List.of("List","Map","Eilast","Collection"),1));
-        listQuestion.add(new Question ("Какой модификатор доступа делает член класса доступным только внутри этого класса?", List.of("public","String","private","ModerPriv"),0));
-        listQuestion.add(new Question ("Что такое исключение в Java?",List.of("Ошибка компиляции","Исключение обьекта путем команд","Doms","Где?"),3));
-        listQuestion.add(new Question ("Какой из следующих классов является частью Java Collections Framework?",List.of("HashMap","Scanner","Framework","Collection"),1));
-        listQuestion.add(new Question ("Какой оператор используется для создания нового объекта в Java?",List.of("new","object","ineselert","int"),1));
-        listQuestion.add(new Question ("Какой из следующих методов позволяет получить длину массива в Java?",List.of("length()","size()","getlength()","length"),0));
+        listQuestion.add(new Question("Как изначально назывался язык java", List.of("Oak", "Tree", "Brich", "Pine"), 0));
+        listQuestion.add(new Question("Кто создал Джаву", List.of("Гоплинг", "Гослинг", "Готлинг", "Годлинг"), 1));
+        listQuestion.add(new Question("Сколько байт памяти занимает тип переменных", List.of("2", "4", "8", "16"), 2));
+        listQuestion.add(new Question("Два важных ключевых слова, используемых в циклах", List.of("Break и Contine", "Break и Add", "Break и loop", "loop и Add"), 0));
+        listQuestion.add(new Question("Какие данные возвращает метод  main()", List.of("String", "Int", "Не может возвращать данные", "Указанные в скобках"), 2));
+        listQuestion.add(new Question("Сколько методов у класса  Object", List.of("8", "9", "11", "12"), 2));
+        listQuestion.add(new Question("Выберите несуществующий метод Object", List.of("String toString()", "Object clone()", "int hashCode()", "void patify()"), 3));
+        listQuestion.add(new Question("Какие элементы может содержать класс", List.of("Поля", "Конструкоры", "Методы", "Интерфейсы", "Все вышеперечислонные"), 4));
+        listQuestion.add(new Question("Что означает этот метасимвол регулярных выражений -$ ", List.of("Начало строки", "Конец строки", "Начало слова", "Конец ввода"), 1));
+        listQuestion.add(new Question("Что озн  ачает этот метасимвол регулярных выражений -\s ", List.of("Цифровой символ", "Не цифровой символ", "символ пробела", "бкувенно-цифровой символ", "Все вышеперечислонные"), 2));
+        listQuestion.add(new Question("Какой из следующих типов данных является примитивным в Java?", List.of("String", "Integer", "int", "ArrayList"), 2));
+        listQuestion.add(new Question("Какой из следующих операторов используется для сравнения двух значений в Java?", List.of("=", "==", "===", "!="), 1));
+        listQuestion.add(new Question("Какой метод используется для запуска программы в Java?", List.of("main()", "start()", "run()", "startJava()"), 0));
+        listQuestion.add(new Question("Как останосить case?", List.of("break", "stop", "stopline", "short"), 3));
+        listQuestion.add(new Question("Какой из следующих интерфейсов используется для работы с коллекциями в Java?", List.of("List", "Map", "Eilast", "Collection"), 1));
+        listQuestion.add(new Question("Какой модификатор доступа делает член класса доступным только внутри этого класса?", List.of("public", "String", "private", "ModerPriv"), 0));
+        listQuestion.add(new Question("Что такое исключение в Java?", List.of("Ошибка компиляции", "Исключение обьекта путем команд", "Doms", "Где?"), 3));
+        listQuestion.add(new Question("Какой из следующих классов является частью Java Collections Framework?", List.of("HashMap", "Scanner", "Framework", "Collection"), 1));
+        listQuestion.add(new Question("Какой оператор используется для создания нового объекта в Java?", List.of("new", "object", "ineselert", "int"), 1));
+        listQuestion.add(new Question("Какой из следующих методов позволяет получить длину массива в Java?", List.of("length()", "size()", "getlength()", "length"), 0));
+        listQuestion.add(new Question("В каком году основали язык java?", List.of("1995", "1990", "1997", "2000"), 0));
+        listQuestion.add(new Question("Назовите фамилию разработчика языка java?", List.of("Паскаль", "Эйх", "Гослинг", "Россум"), 2));
+        listQuestion.add(new Question("Кто был первым программистом?", List.of("Ari", "Ada", "Кэй", "Эйх"), 1));
+        listQuestion.add(new Question("Как называется виртуальная машина, которая позволяет компьютеру запускать программы?", List.of("JVM", "JDK", "JRE", "JIT"), 0));
+        listQuestion.add(new Question("Первоначальное название языка java?", List.of("Oak", "Delphi", "Php", "Perl"), 0));
     }
 
     @Override
@@ -55,94 +68,112 @@ public class Bot extends TelegramLongPollingBot {
     @Override
     public void onUpdateReceived(Update update) {
         if (update.hasMessage() && update.getMessage().hasText()) {
-            Long chartId = update.getMessage().getChatId();
+            Long chatId = update.getMessage().getChatId();
             Message message = update.getMessage();
-            if (!heroes.containsKey(chartId)) {
-                sendMassage(chartId, "Привет! Ну что поехали ");
-                heroes.put(chartId, new Student(message.getFrom().getId(), message.getFrom().getFirstName()));
-                sendQuestion(chartId, 0);
+            if (!heroes.containsKey(chatId)) {
+                sendMassage(chatId, "Привет! Ну что поехали ");
+                Student student = new Student(message.getFrom().getId(), message.getFrom().getFirstName());
+                for (Question question : listQuestion) {
+                    student.addQuestion(question);
+                }
+                student.shuffleQuestions();
+                heroes.put(chatId, student);
+                sendQuestion(chatId, 0);
             }
 
-        }else if (update.hasCallbackQuery()) {
-                String answers = update.getCallbackQuery().getData();
-                Long chatId = update.getCallbackQuery().getMessage().getChatId();
+        } else if (update.hasCallbackQuery()) {
+            String callbackData = update.getCallbackQuery().getData();
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
 
-                if (heroes.containsKey(chatId)) {
-                    Student student = heroes.get(chatId);
+            if (heroes.containsKey(chatId)) {
+                Student student = heroes.get(chatId);
 
-                    if ("restart".equals(answers)) {
+                if ("restart".equals(callbackData)) {
+                    student.reset();
+                    student.shuffleQuestions();
+                    sendMassage(chatId, "Тест начинается заново!");
+                    sendQuestion(chatId, 0);
+                    return;
+                }
+                if ("next_question".equals(callbackData)) {
+                    int nextQuestionIndex = student.getNumber();
+                    if (nextQuestionIndex < student.getShuffledQuestions().size()) {
+                        sendQuestion(chatId, nextQuestionIndex);
+                    } else {
+                        sendMassage(chatId, "Все вопросы закончились!");
+                    }
+                    return;
+                }
 
-                        student.reset();
-                        sendMassage(chatId, "Тест начинается заново!");
-                        sendQuestion(chatId, 0);
-                        return;
+                int questionIndex = student.getNumber();
+                List<Question> shuffledQuestions = student.getShuffledQuestions();
+                if (questionIndex < shuffledQuestions.size()) {
+                    Question question = shuffledQuestions.get(questionIndex);
+                    if (callbackData.equals(question.getAnswer().get(question.getIndex()))) {
+                        student.veryGoodQuestion();
+                        sendMassage(chatId, "Ответ верный! " + student.getGoodQuestion() + " правильных ответов.");
+                    } else {
+                        sendMassage(chatId, "Ответ неверный. У вас все еще " + student.getGoodQuestion() + " правильных ответов.");
                     }
 
-                    int questionIndex = student.getNumber();
-                    if (questionIndex < listQuestion.size()) {
-                        Question question = listQuestion.get(questionIndex);
-                        if (answers.equals(question.getAnswer().get(question.getIndex()))) {
-                            student.veryGoodQuestion();
-                            sendMassage(chatId, "Ответ верный! " + student.getGoodQuestion() + " правильных ответов.");
-                            sendPhoto(chatId, "C:\\Users\\andre\\IdeaProjects\\Java\\Good_Question.jpg", "");
-                        } else {
-                            sendMassage(chatId, "Ответ неверный. У вас все еще " + student.getGoodQuestion() + " правильных ответов.");
-                            sendPhoto(chatId, "C:\\Users\\andre\\IdeaProjects\\Java\\bad-or-good-word-on-question-mark-background-E3KKBT.jpg", "");
-                        }
+
+                    student.addAnswer(callbackData);
+                    student.nextQuestion();
 
 
-                        student.addAnswer(answers);
-                        student.vetynumber();
-
-
-                        if (student.getNumber() == listQuestion.size()) {
-                            sendMassage(chatId, "Тест завершен!");
-                            String finalResult = student.getFinalResult();
-                            sendMassageWithRetryButton(chatId, finalResult);
-                            sendMassage(GROUP_ID, student.getFirstName() + " завершил тест с " + student.getGoodQuestion() + " правильными ответами.");
-                            heroes.remove(chatId);
-                        } else {
-                            sendQuestion(chatId, student.getNumber());
-                        }
+                    if (student.getNumber() == shuffledQuestions.size()) {
+                        sendMassage(chatId, "Тест завершен!");
+                        String finalResult = student.getFinalResult();
+                        sendMessageWithRetryButton(chatId, finalResult);
+                        sendMassage(GROUP_ID, student.getId() + student.getFirstName() + " завершил тест с " + student.getGoodQuestion() + " правильными ответами.");
+                    } else {
+                        sendNextQuestionButton(chatId);
                     }
                 }
             }
-
-    }
-    private void sendQuestion(Long chatId, int questionIndex) {
-        if (questionIndex < listQuestion.size()) {
-            Question question = listQuestion.get(questionIndex);
-            sendMassage(chatId, question.getName(), question.getAnswer());
-        } else {
-            sendMassage(chatId, "Все вопросы закончились.");
         }
     }
 
-    public void sendPhoto(Long chartId, String fileName, String caption){
-        try {
-            SendPhoto sendPhoto = new SendPhoto();
-            sendPhoto.setChatId(chartId.toString());
-            sendPhoto.setPhoto(new InputFile( new FileInputStream(  fileName), fileName));
-            sendPhoto.setCaption(caption);
-            execute(sendPhoto);
 
-        } catch (FileNotFoundException | TelegramApiException e) {
+    private void sendQuestion(Long chatId, int questionIndex) {
+        Student student = heroes.get(chatId);
+        if (student != null) {
+            List<Question> shuffledQuestions = student.getShuffledQuestions();
+            if (questionIndex < shuffledQuestions.size()) {
+                Question question = shuffledQuestions.get(questionIndex);
+                sendMassage(chatId, question.getName(), question.getAnswer());
+            } else {
+                sendMassage(chatId, "Все вопросы закончились.");
+            }
+        }
+    }
+
+    private void sendNextQuestionButton(Long chatId) {
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId.toString());
+        message.setText("Нажмите кнопку, чтобы перейти к следующему вопросу:");
+
+        InlineKeyboardMarkup keyboardMarkup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rowsInLine = new ArrayList<>();
+        List<InlineKeyboardButton> row = new ArrayList<>();
+
+        InlineKeyboardButton nextButton = new InlineKeyboardButton();
+        nextButton.setText("Следующий вопрос");
+        nextButton.setCallbackData("next_question");
+        row.add(nextButton);
+
+        rowsInLine.add(row);
+        keyboardMarkup.setKeyboard(rowsInLine);
+        message.setReplyMarkup(keyboardMarkup);
+
+        try {
+            execute(message);
+        } catch (TelegramApiException e) {
             e.printStackTrace();
         }
     }
 
-private void sendMassage(Long chartId, String text) {
-    SendMessage reply = new SendMessage();
-    reply.setChatId(chartId.toString());
-    reply.setText(text);
-
-    try {
-        execute(reply);
-    } catch (TelegramApiException e) {
-        e.printStackTrace();
-    }
-}
-    private void sendMassageWithRetryButton(Long chatId, String text) {
+    private void sendMessageWithRetryButton(Long chatId, String text) {
         SendMessage reply = new SendMessage();
         reply.setChatId(chatId.toString());
         reply.setText(text);
@@ -152,7 +183,7 @@ private void sendMassage(Long chartId, String text) {
         List<InlineKeyboardButton> row = new ArrayList<>();
 
         InlineKeyboardButton retryButton = new InlineKeyboardButton();
-        retryButton.setText("Снова!!");
+        retryButton.setText("Заново!!");
         retryButton.setCallbackData("restart");
         row.add(retryButton);
 
@@ -167,8 +198,32 @@ private void sendMassage(Long chartId, String text) {
         }
     }
 
+    public void sendPhoto(Long chartId, String fileName, String caption) {
+        try {
+            SendPhoto sendPhoto = new SendPhoto();
+            sendPhoto.setChatId(chartId.toString());
+            sendPhoto.setPhoto(new InputFile(new FileInputStream(fileName), fileName));
+            sendPhoto.setCaption(caption);
+            execute(sendPhoto);
 
-    private void sendMassage (Long chartId, String text, List < String > button){
+        } catch (FileNotFoundException | TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendMassage(Long chartId, String text) {
+        SendMessage reply = new SendMessage();
+        reply.setChatId(chartId.toString());
+        reply.setText(text);
+
+        try {
+            execute(reply);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendMassage(Long chartId, String text, List<String> button) {
         SendMessage reply = new SendMessage();
         reply.setChatId(chartId.toString());
         reply.setText(text);
@@ -183,10 +238,10 @@ private void sendMassage(Long chartId, String text) {
 
     }
 
-    public static InlineKeyboardMarkup createButtons(List<String> buttonsName){
+    public static InlineKeyboardMarkup createButtons(List<String> buttonsName) {
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rowsInLine = new ArrayList<>();
-        buttonsName .forEach(name->{
+        buttonsName.forEach(name -> {
             List<InlineKeyboardButton> rowInLine = new ArrayList<>();
             InlineKeyboardButton button = new InlineKeyboardButton();
             button.setText(name);
@@ -199,6 +254,5 @@ private void sendMassage(Long chartId, String text) {
         return inlineKeyboardMarkup;
     }
 }
-
 
 
