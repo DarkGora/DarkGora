@@ -1,16 +1,20 @@
+import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 
+import javax.management.ConstructorParameters;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 @Getter
 @Setter
+@RequiredArgsConstructor
 
 public class Student {
-    private Long id;
-    private String firstName;
+    private final Long id; // final поле
+    private final String firstName; // final поле
     private int number;
     private int goodQuestion;
     private List<Question> questions;
@@ -23,58 +27,9 @@ public class Student {
         this.answers.clear();
         shuffleQuestions(); // Перемешиваем вопросы заново
     }
-
-    public void setShuffledQuestions(List<Question> shuffledQuestions) {
-        this.shuffledQuestions = shuffledQuestions;
-    }
-
-    public void setAnswers(List<String> answers) {
-        this.answers = answers;
-    }
-
-    public void setQuestions(List<Question> questions) {
-        this.questions = questions;
-    }
-
-    public List<Question> getShuffledQuestions() {
-        return shuffledQuestions;
-    }
     public void nextQuestion() {
         this.number++;
     }
-
-    public Long getId() {
-        return id;
-    }
-
-    public String getFirstName() {
-        return firstName;
-    }
-
-    public int getGoodQuestion() {
-        return goodQuestion;
-    }
-
-    public int getNumber() {
-        return number;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public void setFirstName(String firstName) {
-        this.firstName = firstName;
-    }
-
-    public void setNumber(int number) {
-        this.number = number;
-    }
-
-    public void setGoodQuestion(int goodQuestion) {
-        this.goodQuestion = goodQuestion;
-    }
-
 
     public void veryGoodQuestion() {
         this.goodQuestion++;
@@ -93,15 +48,7 @@ public class Student {
         }
     }
 
-    public Student(Long id, String firstName) {
-        this.id = id;
-        this.firstName = firstName;
-        this.number = 0;
-        this.goodQuestion = 0;
-        this.questions = new ArrayList<>();
-        this.answers = new ArrayList<>();
-        this.shuffledQuestions = new ArrayList<>();
-    }
+    //
 
 
     public void addQuestion(Question question) {
@@ -115,15 +62,6 @@ public class Student {
         answers.add(answer);
     }
 
-
-    public List<Question> getQuestions() {
-        return questions;
-    }
-
-
-    public List<String> getAnswers() {
-        return answers;
-    }
     public boolean isAnswerCorrect(String correctAnswer) {
         if (number < answers.size()) {
             return answers.get(number).equals(correctAnswer);
