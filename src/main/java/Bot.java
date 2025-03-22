@@ -173,7 +173,7 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
 
-    private void sendMessageWithRetryButton(Long chatId, String text) {
+    void sendMessageWithRetryButton(Long chatId, String text) {
         SendMessage reply = new SendMessage();
         reply.setChatId(chatId.toString());
         reply.setText(text);
