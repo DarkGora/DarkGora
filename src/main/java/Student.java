@@ -11,21 +11,20 @@ import java.util.List;
 @Getter
 @Setter
 @RequiredArgsConstructor
-
 public class Student {
-    private final Long id; // final поле
-    private final String firstName; // final поле
-    private int number;
-    private int goodQuestion;
-    private List<Question> questions;
-    private List<String> answers;
-    private List<Question> shuffledQuestions;
+    private final Long id;
+    private final String firstName;
+    private int number = 0;
+    private int goodQuestion = 0;
+    private List<Question> questions = new ArrayList<>();
+    private List<String> answers = new ArrayList<>();
+    private List<Question> shuffledQuestions = new ArrayList<>();
 
     public void reset() {
         this.number = 0;
         this.goodQuestion = 0;
         this.answers.clear();
-        shuffleQuestions(); // Перемешиваем вопросы заново
+        shuffleQuestions();
     }
     public void nextQuestion() {
         this.number++;
@@ -33,11 +32,6 @@ public class Student {
 
     public void veryGoodQuestion() {
         this.goodQuestion++;
-    }
-
-
-    public void vetynumber() {
-        this.number++;
     }
 
     public void shuffleQuestions() {
@@ -48,15 +42,11 @@ public class Student {
         }
     }
 
-    //
-
-
     public void addQuestion(Question question) {
         if (!questions.contains(question)) {
             questions.add(question);
         }
     }
-
 
     public void addAnswer(String answer) {
         answers.add(answer);
@@ -68,7 +58,6 @@ public class Student {
         }
         return false;
     }
-
 
     public Question getCurrentQuestion() {
         if (number < shuffledQuestions.size()) {
@@ -82,7 +71,6 @@ public class Student {
         }
         return (double) goodQuestion / questions.size() * 100;
     }
-
 
     public String getFinalResult() {
         StringBuilder result = new StringBuilder();
@@ -102,7 +90,6 @@ public class Student {
                 result.append("----------------------------\n");
             }
         }
-
         return result.toString();
     }
 }
