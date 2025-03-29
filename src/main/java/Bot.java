@@ -1,3 +1,4 @@
+import lombok.extern.log4j.Log4j2;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
@@ -17,7 +18,7 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 
-
+@Log4j2
 public class Bot extends TelegramLongPollingBot {
     public static final String USER_NAME = "Gora321_bot";
     public static final String TOKEN = "7753540504:AAF6PE6BC8WlrrsIQUHOpO30zcLmqAovII8";
@@ -71,8 +72,9 @@ public class Bot extends TelegramLongPollingBot {
             Long chatId = update.getMessage().getChatId();
             Message message = update.getMessage();
             if (!heroes.containsKey(chatId)) {
-                sendMassage(chatId, "Привет! Ну что поехали ");
                 Student student = new Student(message.getFrom().getId(), message.getFrom().getFirstName());
+                log.info("Тест начал пользователь" + student.getId() +" "+ student.getFirstName() );
+                sendMassage(chatId, "Привет! Ну что поехали ");
                 for (Question question : listQuestion) {
                     student.addQuestion(question);
                 }
@@ -91,6 +93,7 @@ public class Bot extends TelegramLongPollingBot {
                 if ("restart".equals(callbackData)) {
                     student.reset();
                     student.shuffleQuestions();
+                    log.info("--Тест-пошел-заново--");
                     sendMassage(chatId, "Тест начинается заново!");
                     sendQuestion(chatId, 0);
                     return;
@@ -122,6 +125,7 @@ public class Bot extends TelegramLongPollingBot {
 
 
                     if (student.getNumber() == shuffledQuestions.size()) {
+                        log.info("-Тест-пользователем-завершен-" + student.getId() +" "+ student.getFirstName()+ "- Кол-во правильных ответов  "+ student.getGoodQuestion());
                         sendMassage(chatId, "Тест завершен!");
                         String finalResult = student.getFinalResult();
                         sendMessageWithRetryButton(chatId, finalResult);
