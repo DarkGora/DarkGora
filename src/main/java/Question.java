@@ -1,43 +1,78 @@
 import lombok.Getter;
-import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 @Getter
 public class Question {
-    private final String questionText;  // Переименовано для ясности
-    private final List<String> answers; // Переименовано и сделано неизменяемым
-    private final int correctAnswerIndex; // Переименовано для ясности
+    private final String questionText;
+    private final List<String> answers;
+    private final int correctAnswerIndex;
 
     public Question(String questionText, List<String> answers, int correctAnswerIndex) {
-        if (questionText == null || questionText.isBlank()) {
-            throw new IllegalArgumentException("Текст вопроса не может быть пустым");
+        this.questionText = validateQuestionText(questionText);
+        this.answers = validateAndPrepareAnswers(answers);
+        this.correctAnswerIndex = validateCorrectIndex(correctAnswerIndex, answers.size());
+    }
+
+    private String validateQuestionText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            throw new IllegalArgumentException("Question text cannot be null or empty");
+        }
+        return text.trim();
+    }
+
+    private List<String> validateAndPrepareAnswers(List<String> answers) {
+        Objects.requireNonNull(answers, "Answers list cannot be null");
+
+        if (answers.size() < 2) {
+            throw new IllegalArgumentException("At least 2 answers are required");
         }
 
-        if (answers == null || answers.size() < 2) {
-            throw new IllegalArgumentException("Должно быть как минимум 2 варианта ответа");
+        // Удаляем пустые ответы и обрезаем пробелы
+        List<String> processedAnswers = new ArrayList<>();
+        for (String answer : answers) {
+            if (answer != null && !answer.trim().isEmpty()) {
+                processedAnswers.add(answer.trim());
+            }
         }
 
-        if (correctAnswerIndex < 0 || correctAnswerIndex >= answers.size()) {
-            throw new IllegalArgumentException("Индекс правильного ответа выходит за границы");
+        if (processedAnswers.size() < 2) {
+            throw new IllegalArgumentException("After cleanup, less than 2 valid answers remain");
         }
 
-        this.questionText = questionText;
-        this.answers = Collections.unmodifiableList(new ArrayList<>(answers)); // Защита от изменений
-        this.correctAnswerIndex = correctAnswerIndex;
+        return Collections.unmodifiableList(processedAnswers);
+    }
+
+    private int validateCorrectIndex(int index, int answersSize) {
+        if (index < 0 || index >= answersSize) {
+            throw new IllegalArgumentException(
+                    String.format("Correct answer index %d is out of bounds (0-%d)",
+                            index, answersSize - 1));
+        }
+        return index;
     }
 
     public boolean isCorrectAnswer(int answerIndex) {
-        return answerIndex == correctAnswerIndex;
+        return answerIndex >= 0 &&
+                answerIndex < answers.size() &&
+                answerIndex == correctAnswerIndex;
     }
 
     public boolean isCorrectAnswer(String answer) {
-        return answers.get(correctAnswerIndex).equals(answer);
+        if (answer == null) return false;
+        return answer.trim().equalsIgnoreCase(answers.get(correctAnswerIndex).trim());
     }
 
     public String getCorrectAnswer() {
         return answers.get(correctAnswerIndex);
+    }
+
+    @Override
+    public String toString() {
+        return "Question: " + questionText + "\nAnswers: " + answers +
+                "\nCorrect: " + answers.get(correctAnswerIndex);
     }
 }

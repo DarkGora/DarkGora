@@ -14,6 +14,8 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.util.*;
 
+import static java.awt.SystemColor.text;
+
 @Log4j2
 public class Bot extends TelegramLongPollingBot {
     public static final String USER_NAME = "Gora321_bot";
@@ -23,17 +25,29 @@ public class Bot extends TelegramLongPollingBot {
 
     private final Map<Long, Student> activeUsers = new HashMap<>();
     private final Map<Long, String> currentTestType = new HashMap<>();
+    private final Map<Long, Boolean> inConversationMode = new HashMap<>();
+
+
     private final List<Question> javaQuestions;
     private final List<Question> pythonQuestions;
 
+    private final Map<String, String> conversationResponses = Map.of(
+            "привет", "Привет! Как дела?",
+            "как дела", "У меня все отлично! А у тебя?",
+            "что ты умеешь", "Я могу проводить тесты по Java и Python, а также просто общаться. Попробуй команду /test",
+            "спасибо", "Пожалуйста! Обращайся, если будут вопросы :)",
+            "пока", "До свидания! Возвращайся для новых тестов!"
+    );
+
     public Bot() {
-        // Инициализируем списки перед использованием
         this.javaQuestions = new ArrayList<>();
         this.pythonQuestions = new ArrayList<>();
-
-        // Теперь можно добавлять вопросы
         initializeJavaQuestions();
         initializePythonQuestions();
+    }
+
+    public static InlineKeyboardMarkup createButtons(List<String> rowsInLine) {
+        return null;
     }
 
     private void initializeJavaQuestions() {
@@ -81,26 +95,105 @@ public class Bot extends TelegramLongPollingBot {
         return TOKEN;
     }
 
-    @Override
-    public void onUpdateReceived(Update update) {
-        try {
-            if (update.hasMessage() && update.getMessage().hasText()) {
-                handleMessage(update);
-            } else if (update.hasCallbackQuery()) {
-                handleCallbackQuery(update);
+        @Override
+        public void onUpdateReceived(Update update) {
+            try {
+                if (update.hasMessage() && update.getMessage().hasText()) {
+                    handleMessage(update);
+                } else if (update.hasCallbackQuery()) {
+                    handleCallbackQuery(update);
+                }
+            } catch (Exception e) {
+                log.error("Ошибка при обработке обновления", e);
+                sendErrorMessage(update);
             }
-        } catch (Exception e) {
-            log.error("Ошибка при обработке обновления", e);
-            sendErrorMessage(update);
         }
-    }
-
     private void handleMessage(Update update) {
         Message message = update.getMessage();
+        if (message == null || !message.hasText()) return;
+
         Long chatId = message.getChatId();
+        String text = message.getText().toLowerCase();
+
+        // Обработка команд
+        if (text.startsWith("/")) {
+            handleCommand(chatId, text, message.getFrom());
+            return;
+        }
+
+        // Проверка режима свободного общения
+        if (Boolean.TRUE.equals(inConversationMode.get(chatId))) {
+            handleConversation(chatId, text);
+            return;
+        }
+
+        // Стандартная обработка (тесты)
         if (!activeUsers.containsKey(chatId)) {
             sendTestSelection(chatId, message.getFrom());
         }
+    }
+    private void handleCommand(Long chatId, String command, User user) {
+        switch (command) {
+            case "/start":
+                sendWelcomeMessage(chatId, user);
+                break;
+            case "/test":
+                sendTestSelection(chatId, user);
+                break;
+            case "/chat":
+                startConversationMode(chatId);
+                break;
+            case "/stop":
+                stopConversationMode(chatId);
+                break;
+            case "/help":
+                sendHelpMessage(chatId);
+                break;
+            default:
+                sendMessage(chatId, "Неизвестная команда. Попробуйте /help");
+        }
+    }
+    private void handleConversation(Long chatId, String text) {
+        String response = conversationResponses.entrySet().stream()
+                .filter(entry -> text.contains(entry.getKey()))
+                .findFirst()
+                .map(Map.Entry::getValue)
+                .orElse("Извините, я не совсем понял. Может, хотите пройти тест? Напишите /test");
+
+        sendMessage(chatId, response);
+    }
+    private void startConversationMode(Long chatId) {
+        inConversationMode.put(chatId, true);
+        sendMessage(chatId, "Режим свободного общения активирован. Задавайте вопросы или просто поговорим! " +
+                "Чтобы вернуться к тестам, напишите /stop");
+    }
+
+    private void stopConversationMode(Long chatId) {
+        inConversationMode.remove(chatId);
+        sendMessage(chatId, "Режим свободного общения выключен. Для выбора теста напишите /test");
+    }
+
+    private void sendWelcomeMessage(Long chatId, User user) {
+        String welcomeText = String.format(
+                "Привет, %s! Я бот для тестирования знаний по Java и Python.\n\n" +
+                        "Доступные команды:\n" +
+                        "/test - начать тест\n" +
+                        "/chat - свободное общение\n" +
+                        "/help - помощь\n\n" +
+                        "Выберите что вам интересно!",
+                user.getFirstName());
+
+        sendMessage(chatId, welcomeText);
+    }
+
+    private void sendHelpMessage(Long chatId) {
+        String helpText = "Я могу:\n" +
+                "1. Проводить тесты по Java и Python (/test)\n" +
+                "2. Просто общаться (/chat)\n\n" +
+                "Во время теста вы можете прервать его и начать заново.\n" +
+                "Для выхода из режима общения напишите /stop";
+
+        sendMessage(chatId, helpText);
     }
 
     private void sendTestSelection(Long chatId, User user) {
