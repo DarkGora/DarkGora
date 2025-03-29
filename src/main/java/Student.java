@@ -1,95 +1,148 @@
-import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 
-import javax.management.ConstructorParameters;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 @Getter
-@Setter
-@RequiredArgsConstructor
 public class Student {
     private final Long id;
     private final String firstName;
-    private int number = 0;
-    private int goodQuestion = 0;
-    private List<Question> questions = new ArrayList<>();
-    private List<String> answers = new ArrayList<>();
+    private final String testType;
+    private int currentQuestionIndex = 0;
+    private int correctAnswersCount = 0;
+    private final List<Question> questions = new ArrayList<>();
+    private final List<String> userAnswers = new ArrayList<>();
     private List<Question> shuffledQuestions = new ArrayList<>();
 
+    public Student(Long id, String firstName, String testType) {
+        this.id = Objects.requireNonNull(id, "ID пользователя не может быть null");
+        this.firstName = validateName(firstName);
+        this.testType = Objects.requireNonNull(testType, "Тип теста не может быть null");
+
+    }
+
+    private String validateName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            // Если имя не указано, используем "Аноним"
+            return "Аноним";
+        }
+        return name.trim();
+    }
+
+
+
     public void reset() {
-        this.number = 0;
-        this.goodQuestion = 0;
-        this.answers.clear();
+        this.currentQuestionIndex = 0;
+        this.correctAnswersCount = 0;
+        this.userAnswers.clear();
         shuffleQuestions();
     }
-    public void nextQuestion() {
-        this.number++;
-    }
 
-    public void veryGoodQuestion() {
-        this.goodQuestion++;
-    }
 
-    public void shuffleQuestions() {
-        shuffledQuestions = new ArrayList<>(questions);
-        Collections.shuffle(shuffledQuestions);
-        if (shuffledQuestions.size() > 5) {
-            shuffledQuestions = shuffledQuestions.subList(0, 5);
+    public void moveToNextQuestion() {
+        if (hasMoreQuestions()) {
+            this.currentQuestionIndex++;
         }
     }
 
+    public void incrementCorrectAnswers() {
+        this.correctAnswersCount++;
+    }
+
+    public void shuffleQuestions() {
+        if (questions.isEmpty()) {
+            this.shuffledQuestions = new ArrayList<>();
+            return;
+        }
+
+        List<Question> newShuffled = new ArrayList<>(questions);
+        Collections.shuffle(newShuffled);
+
+        // Ограничиваем количество вопросов
+        final int MAX_QUESTIONS = 3;
+        if (newShuffled.size() > MAX_QUESTIONS) {
+            newShuffled = newShuffled.subList(0, MAX_QUESTIONS);
+        }
+
+        this.shuffledQuestions = Collections.unmodifiableList(newShuffled);
+    }
+
     public void addQuestion(Question question) {
-        if (!questions.contains(question)) {
+        if (question != null && !questions.contains(question)) {
             questions.add(question);
         }
     }
 
-    public void addAnswer(String answer) {
-        answers.add(answer);
+    public void addUserAnswer(String answer) {
+        if (answer != null && !answer.isBlank()) {
+            userAnswers.add(answer);
+        }
     }
 
-    public boolean isAnswerCorrect(String correctAnswer) {
-        if (number < answers.size()) {
-            return answers.get(number).equals(correctAnswer);
+    public boolean checkAnswer(int questionIndex, String userAnswer) {
+        if (questionIndex < 0 || questionIndex >= shuffledQuestions.size()) {
+            return false;
         }
-        return false;
+
+        Question question = shuffledQuestions.get(questionIndex);
+        return question.isCorrectAnswer(userAnswer);
     }
 
     public Question getCurrentQuestion() {
-        if (number < shuffledQuestions.size()) {
-            return shuffledQuestions.get(number);
+        if (!hasMoreQuestions()) {
+            return null;
         }
-        return null;
+        return shuffledQuestions.get(currentQuestionIndex);
     }
+
+    public boolean hasMoreQuestions() {
+        return currentQuestionIndex < shuffledQuestions.size();
+    }
+
     public double getSuccessPercentage() {
-        if (questions.isEmpty()) {
+        if (shuffledQuestions.isEmpty()) {
             return 0.0;
         }
-        return (double) goodQuestion / questions.size() * 100;
+        return (double) correctAnswersCount / shuffledQuestions.size() * 100;
     }
 
-    public String getFinalResult() {
-        StringBuilder result = new StringBuilder();
-        result.append("Финальный результат для ").append(firstName).append(":\n");
+    public String getTestResults() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Результаты теста по ")
+                .append(testType.equalsIgnoreCase("java") ? "Java" : "Python")
+                .append(" для ").append(firstName).append(":\n\n");
 
-        if (questions.isEmpty()) {
-            result.append("Вопросов не было.\n");
-        } else {
-            result.append("Всего вопросов: ").append(questions.size()).append("\n");
-            result.append("Правильных ответов: ").append(goodQuestion).append("\n");
-            result.append("Процент правильных ответов: ").append(String.format("%.2f", getSuccessPercentage())).append("%\n\n");
-
-            result.append("Детализация:\n");
-            for (int i = 0; i < shuffledQuestions.size(); i++) {
-                result.append("Вопрос ").append(i + 1).append(": ").append(shuffledQuestions.get(i)).append("\n");
-                result.append("Ваш ответ: ").append(i < answers.size() ? answers.get(i) : "Нет ответа").append("\n");
-                result.append("----------------------------\n");
-            }
+        if (shuffledQuestions.isEmpty()) {
+            sb.append("Тест не содержал вопросов.\n");
+            return sb.toString();
         }
-        return result.toString();
+
+        sb.append("Всего вопросов: ").append(shuffledQuestions.size()).append("\n")
+                .append("Правильных ответов: ").append(correctAnswersCount).append("\n")
+                .append("Успешность: ").append(String.format("%.1f%%", getSuccessPercentage())).append("\n\n");
+
+        sb.append("Детализация:\n");
+        for (int i = 0; i < shuffledQuestions.size(); i++) {
+            Question q = shuffledQuestions.get(i);
+            String userAnswer = i < userAnswers.size() ? userAnswers.get(i) : "Нет ответа";
+            String correctAnswer = q.getCorrectAnswer();
+
+            sb.append(i+1).append(". ").append(q.getQuestionText()).append("\n")
+                    .append("Ваш ответ: ").append(userAnswer)
+                    .append(userAnswer.equals(correctAnswer) ? " ✓" : " ✗").append("\n")
+                    .append("Правильно: ").append(correctAnswer).append("\n\n");
+        }
+
+        return sb.toString();
+    }
+
+    // Геттеры и сеттеры, сгенерированные Lombok
+    public void setCurrentQuestionIndex(int index) {
+        if (index >= 0 && index < shuffledQuestions.size()) {
+            this.currentQuestionIndex = index;
+        }
     }
 }
