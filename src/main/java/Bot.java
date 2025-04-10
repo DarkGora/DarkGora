@@ -1,4 +1,5 @@
 import lombok.extern.log4j.Log4j2;
+import org.telegram.telegrambots.bots.DefaultBotOptions;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
@@ -34,12 +35,14 @@ public class Bot extends TelegramLongPollingBot {
     private final List<Question> javaQuestions;
     private final List<Question> pythonQuestions;
 
-    public Bot() {
+    public Bot(DefaultBotOptions options) {
+        super(options);
         this.javaQuestions = new ArrayList<>();
         this.pythonQuestions = new ArrayList<>();
         initializeJavaQuestions();
         initializePythonQuestions();
     }
+
 
     public static InlineKeyboardMarkup createButtons(List<String> rowsInLine) {
         return null;
@@ -265,7 +268,7 @@ public class Bot extends TelegramLongPollingBot {
     );
 
     Map<String, String> personalQuestions = Map.ofEntries(
-            entry("имя", "Меня зовут CodeTutor, но ты можешь придумать мне другое имя 😊"),
+            entry("имя", "Меня зовут DarkGora, но ты можешь придумать мне другое имя 😊"),
             entry("возраст", "Я цифровой, поэтому мой возраст измеряется в версиях! Сейчас я v2.0"),
             entry("создатель", "Меня создал разработчик, который тоже когда-то начинал с основ программирования"),
             entry("дом", "Я живу в облаке, но иногда спускаюсь на сервера к людям"),
