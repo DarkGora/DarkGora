@@ -1,5 +1,4 @@
 import lombok.Getter;
-import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,6 +7,9 @@ import java.util.Objects;
 
 @Getter
 public class Student {
+    private static final int MAX_QUESTIONS = 3;
+    private static final String DEFAULT_NAME = "Аноним";
+
     private final Long id;
     private final String firstName;
     private final String testType;
@@ -20,19 +22,20 @@ public class Student {
     public Student(Long id, String firstName, String testType) {
         this.id = Objects.requireNonNull(id, "ID пользователя не может быть null");
         this.firstName = validateName(firstName);
-        this.testType = Objects.requireNonNull(testType, "Тип теста не может быть null");
-
+        this.testType = validateTestType(testType);
     }
 
     private String validateName(String name) {
-        if (name == null || name.trim().isEmpty()) {
-            // Если имя не указано, используем "Аноним"
-            return "Аноним";
-        }
-        return name.trim();
+        return (name == null || name.trim().isEmpty()) ? DEFAULT_NAME : name.trim();
     }
 
-
+    private String validateTestType(String testType) {
+        Objects.requireNonNull(testType, "Тип теста не может быть null");
+        if (!testType.equalsIgnoreCase("java") && !testType.equalsIgnoreCase("python")) {
+            throw new IllegalArgumentException("Недопустимый тип теста. Допустимые значения: Java или Python");
+        }
+        return testType.toLowerCase();
+    }
 
     public void reset() {
         this.currentQuestionIndex = 0;
@@ -40,29 +43,19 @@ public class Student {
         this.userAnswers.clear();
         shuffleQuestions();
     }
-
-
-    public void moveToNextQuestion() {
-        if (hasMoreQuestions()) {
-            this.currentQuestionIndex++;
-        }
-    }
-
     public void incrementCorrectAnswers() {
         this.correctAnswersCount++;
     }
 
     public void shuffleQuestions() {
         if (questions.isEmpty()) {
-            this.shuffledQuestions = new ArrayList<>();
+            this.shuffledQuestions = Collections.emptyList();
             return;
         }
 
         List<Question> newShuffled = new ArrayList<>(questions);
         Collections.shuffle(newShuffled);
 
-        // Ограничиваем количество вопросов
-        final int MAX_QUESTIONS = 3;
         if (newShuffled.size() > MAX_QUESTIONS) {
             newShuffled = newShuffled.subList(0, MAX_QUESTIONS);
         }
@@ -76,19 +69,8 @@ public class Student {
         }
     }
 
-    public void addUserAnswer(String answer) {
-        if (answer != null && !answer.isBlank()) {
-            userAnswers.add(answer);
-        }
-    }
-
-    public boolean checkAnswer(int questionIndex, String userAnswer) {
-        if (questionIndex < 0 || questionIndex >= shuffledQuestions.size()) {
-            return false;
-        }
-
-        Question question = shuffledQuestions.get(questionIndex);
-        return question.isCorrectAnswer(userAnswer);
+    private boolean isValidQuestionIndex(int index) {
+        return index >= 0 && index < shuffledQuestions.size();
     }
 
     public Question getCurrentQuestion() {
@@ -112,7 +94,7 @@ public class Student {
     public String getTestResults() {
         StringBuilder sb = new StringBuilder();
         sb.append("Результаты теста по ")
-                .append(testType.equalsIgnoreCase("java") ? "Java" : "Python")
+                .append(testType.equals("java") ? "Java" : "Python")
                 .append(" для ").append(firstName).append(":\n\n");
 
         if (shuffledQuestions.isEmpty()) {
@@ -124,24 +106,31 @@ public class Student {
                 .append("Правильных ответов: ").append(correctAnswersCount).append("\n")
                 .append("Успешность: ").append(String.format("%.1f%%", getSuccessPercentage())).append("\n\n");
 
-        sb.append("Детализация:\n");
-        for (int i = 0; i < shuffledQuestions.size(); i++) {
-            Question q = shuffledQuestions.get(i);
-            String userAnswer = i < userAnswers.size() ? userAnswers.get(i) : "Нет ответа";
-            String correctAnswer = q.getCorrectAnswer();
-
-            sb.append(i+1).append(". ").append(q.getQuestionText()).append("\n")
-                    .append("Ваш ответ: ").append(userAnswer)
-                    .append(userAnswer.equals(correctAnswer) ? " ✓" : " ✗").append("\n")
-                    .append("Правильно: ").append(correctAnswer).append("\n\n");
-        }
+        appendQuestionDetails(sb);
 
         return sb.toString();
     }
 
-    // Геттеры и сеттеры, сгенерированные Lombok
+    private void appendQuestionDetails(StringBuilder sb) {
+        sb.append("Детализация:\n");
+        for (int i = 0; i < shuffledQuestions.size(); i++) {
+            Question q = shuffledQuestions.get(i);
+            String userAnswer = i < userAnswers.size() ? userAnswers.get(i) : "Нет ответа";
+            boolean isCorrect = q.isCorrectAnswer(userAnswer);
+
+            sb.append(i + 1).append(". ").append(q.getQuestionText()).append("\n")
+                    .append("Ваш ответ: ").append(userAnswer)
+                    .append(isCorrect ? " ✓" : " ✗").append("\n");
+
+            if (!isCorrect) {
+                sb.append("Правильно: ").append(q.getCorrectAnswer()).append("\n");
+            }
+            sb.append("\n");
+        }
+    }
+
     public void setCurrentQuestionIndex(int index) {
-        if (index >= 0 && index < shuffledQuestions.size()) {
+        if (isValidQuestionIndex(index)) {
             this.currentQuestionIndex = index;
         }
     }
