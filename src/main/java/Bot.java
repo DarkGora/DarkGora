@@ -1,4 +1,5 @@
 import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import lombok.extern.log4j.Log4j2;
 import okhttp3.OkHttpClient;
@@ -26,13 +27,7 @@ import static java.util.Map.entry;
 @Log4j2
 public class Bot extends TelegramLongPollingBot {
     // Конфигурация бота
-    private static final class BotConfig {
-        static final String USER_NAME = "Gora321_bot";
-        static final String TOKEN = "7753540504:AAF6PE6BC8WlrrsIQUHOpO30zcLmqAovII8";
-        static final long GROUP_ID = -1002474189401L;
-        static final String CORRECT_IMAGE_PATH = "images/EZpNyk3XYAA7kv0.jpg";
-        static final String WRONG_IMAGE_PATH = "images/scale_1200.jpg";
-    }
+
 
     // Состояния пользователей
     private final Map<Long, Student> activeUsers = new HashMap<>();
@@ -51,6 +46,7 @@ public class Bot extends TelegramLongPollingBot {
     private final Map<String, String> motivation = initMotivation();
     private final Map<String, String> personalQuestions = initPersonalQuestions();
     private final Map<String, String[]> followUpQuestions = initFollowUpQuestions();
+    private final Map<Long, Boolean> inInternetSearchMode = new HashMap<>();
 
     public Bot(DefaultBotOptions options) {
         super(options);
@@ -102,7 +98,12 @@ public class Bot extends TelegramLongPollingBot {
     // Метод для поиска в интернете (например, через Wikipedia API)
     private String searchInternet(String query) {
         OkHttpClient client = new OkHttpClient();
-        String url = "https://api.wikipedia.org/w/api.php?action=opensearch&search=" + query + "&limit=1";
+        String url = "https://en.wikipedia.org/w/api.php" +
+                "?action=query" +
+                "&format=json" +
+                "&list=search" +
+                "&srsearch=" + query +
+                "&srlimit=1"; // Ограничение до одного результата
 
         Request request = new Request.Builder()
                 .url(url)
@@ -110,27 +111,41 @@ public class Bot extends TelegramLongPollingBot {
 
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                return "Ошибка при запросе к API :(";
+                return "Ошибка при запросе к API: " + response.code();
             }
 
+            // Парсим JSON-ответ
             String jsonData = response.body().string();
-            JsonArray jsonArray = JsonParser.parseString(jsonData).getAsJsonArray();
+            JsonObject jsonObject = JsonParser.parseString(jsonData).getAsJsonObject();
+            JsonObject queryObject = jsonObject.getAsJsonObject("query");
+            JsonArray searchResults = queryObject.getAsJsonArray("search");
 
-            if (jsonArray.get(1).getAsJsonArray().size() > 0) {
-                String title = jsonArray.get(1).getAsJsonArray().get(0).getAsString();
-                String description = jsonArray.get(2).getAsJsonArray().get(0).getAsString();
-                String link = jsonArray.get(3).getAsJsonArray().get(0).getAsString();
+            if (searchResults.size() > 0) {
+                JsonObject firstResult = searchResults.get(0).getAsJsonObject();
+                String title = firstResult.get("title").getAsString();
+                String snippet = firstResult.get("snippet").getAsString();
+                String pageId = firstResult.get("pageid").getAsString();
 
-                return "Результат по запросу '" + query + "':\n"
-                        + title + "\n"
-                        + description + "\n"
-                        + "Подробнее: " + link;
+                // Формируем ссылку на статью
+                String articleUrl = "https://en.wikipedia.org/?curid=" + pageId;
+
+                return "Результат по запросу '" + query + "':\n" +
+                        "Название: " + title + "\n" +
+                        "Описание: " + cleanSnippet(snippet) + "\n" +
+                        "Читать полностью: " + articleUrl;
             } else {
                 return "Ничего не найдено по запросу: " + query;
             }
         } catch (Exception e) {
-            return "Ошибка: " + e.getMessage();
+            return "Ошибка при выполнении запроса: " + e.getMessage();
         }
+    }
+
+    /**
+     * Очищает сниппет от HTML-тегов.
+     */
+    private String cleanSnippet(String snippet) {
+        return snippet.replaceAll("<[^>]*>", ""); // Удаляем HTML-теги
     }
 
     // Инициализация баз ответов
@@ -324,11 +339,22 @@ public class Bot extends TelegramLongPollingBot {
         Long chatId = message.getChatId();
         String text = message.getText().toLowerCase();
 
+        // Проверяем, находится ли пользователь в режиме поиска в интернете
+        if (Boolean.TRUE.equals(inInternetSearchMode.get(chatId))) {
+            // Обрабатываем текст как запрос для поиска в интернете
+            String searchResult = searchInternet(text);
+            sendMessage(chatId, searchResult);
+            inInternetSearchMode.put(chatId, false); // Выходим из режима поиска
+            return;
+        }
+
+        // Обработка стандартных команд
         if (text.startsWith("/")) {
             handleCommand(chatId, text, message.getFrom());
             return;
         }
 
+        // Остальная логика обработки сообщений
         if (Boolean.TRUE.equals(inConversationMode.get(chatId))) {
             handleConversation(chatId, text);
             return;
@@ -346,6 +372,10 @@ public class Bot extends TelegramLongPollingBot {
                 trackUserAction(user, "start");
                 break;
             case "/test":
+                if (Boolean.TRUE.equals(inInternetSearchMode.get(chatId))) {
+                    sendMessage(chatId, "Пожалуйста, дождитесь завершения поиска в интернете.");
+                    return;
+                }
                 sendTestSelection(chatId, user);
                 trackUserAction(user, "test_start");
                 break;
@@ -355,6 +385,7 @@ public class Bot extends TelegramLongPollingBot {
                 break;
             case "/stop":
                 stopConversationMode(chatId);
+                stopInternetSearchMode(chatId);
                 break;
             case "/help":
                 sendHelpMessage(chatId);
@@ -362,9 +393,18 @@ public class Bot extends TelegramLongPollingBot {
             case "/stats":
                 sendUserStats(chatId, user);
                 break;
+            case "/internet":
+                inInternetSearchMode.put(chatId, true);
+                sendMessage(chatId, "Введите запрос для поиска в интернете:");
+                trackUserAction(user, "internet_search");
+                break;
             default:
                 sendMessage(chatId, "Неизвестная команда. Попробуйте /help");
         }
+    }
+    private void stopInternetSearchMode(Long chatId) {
+        inInternetSearchMode.put(chatId, false);
+        sendMessage(chatId, "Режим поиска в интернете завершен.");
     }
 
     private void trackUserAction(User user, String action) {
@@ -536,7 +576,7 @@ public class Bot extends TelegramLongPollingBot {
 
     private void sendWelcomeMessage(Long chatId, User user) {
         String welcomeText = String.format(
-                "Привет, %s! Я бот для тестирования знаний по Java и Python.\n\n" +
+                "Привет, %s! Я бот DarkGora для веселья.\n\n" +
                         "Доступные команды:\n" +
                         "/test - начать тест\n" +
                         "/chat - свободное общение\n" +
@@ -550,9 +590,11 @@ public class Bot extends TelegramLongPollingBot {
     private void sendHelpMessage(Long chatId) {
         String helpText = "Я могу:\n" +
                 "1. Проводить тесты по Java и Python (/test)\n" +
-                "2. Просто общаться (/chat)\n\n" +
+                "2. Просто общаться (/chat)\n" +
+                "3. Делать запросы в википедию (/internet)\n\n" +
                 "Во время теста вы можете прервать его и начать заново.\n" +
                 "Для выхода из режима общения напишите /stop";
+
 
         sendMessage(chatId, helpText);
     }
@@ -747,15 +789,6 @@ public class Bot extends TelegramLongPollingBot {
         Long chatId = update.hasMessage() ? update.getMessage().getChatId() :
                 update.getCallbackQuery().getMessage().getChatId();
         sendMessage(chatId, "Произошла ошибка. Пожалуйста, попробуйте позже.");
-    }
-
-    private void sendRetryButton(Long chatId) {
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId.toString());
-        message.setText("Хотите попробовать снова?");
-        message.setReplyMarkup(KeyboardFactory.createSingleButtonKeyboard(
-                "Заново", "restart"));
-        sendMessage(message);
     }
 
     private void restartTest(Long chatId) {
