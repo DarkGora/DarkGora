@@ -1,3 +1,4 @@
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -26,14 +27,12 @@ import static java.util.Map.entry;
 
 @Log4j2
 public class Bot extends TelegramLongPollingBot {
-    // Конфигурация бота
-
-
+    private final String WEATHER = "1c8f74380ef3426ab077c06aa3342f35"; // Ваш API-ключ OpenWeatherMap
     // Состояния пользователей
     private final Map<Long, Student> activeUsers = new HashMap<>();
     private final Map<Long, String> currentTestType = new HashMap<>();
     private final Map<Long, Boolean> inConversationMode = new HashMap<>();
-    private final Map<Long, UserStats> userStats = new HashMap<>();
+    private final Map<Long, Boolean> inInternetSearchMode = new HashMap<>();
 
     // Базы данных
     private final List<Question> javaQuestions = new ArrayList<>();
@@ -46,7 +45,6 @@ public class Bot extends TelegramLongPollingBot {
     private final Map<String, String> motivation = initMotivation();
     private final Map<String, String> personalQuestions = initPersonalQuestions();
     private final Map<String, String[]> followUpQuestions = initFollowUpQuestions();
-    private final Map<Long, Boolean> inInternetSearchMode = new HashMap<>();
 
     public Bot(DefaultBotOptions options) {
         super(options);
@@ -95,6 +93,7 @@ public class Bot extends TelegramLongPollingBot {
                         List.of("^", "**", "*", "//"), 1)
         ));
     }
+
     // Метод для поиска в интернете (например, через Wikipedia API)
     private String searchInternet(String query) {
         OkHttpClient client = new OkHttpClient();
@@ -158,13 +157,13 @@ public class Bot extends TelegramLongPollingBot {
                 entry("как жизнь", "Как у бота - отлично! Всегда на связи и готов помочь. А у вас как?"),
                 entry("кто ты", "Я учебный бот для программистов. Могу:\n- Провести тест\n- Объяснить концепции\n- Дать примеры кода\nЧто интересует?"),
                 entry("меню", "Доступные команды:\n/test - начать тест\n/chat - свободный диалог\n/code - получить пример кода\n/help - справка\n/joke - шутка про код"),
-                entry("погода","Извините, я не могу проверить погоду, но надеюсь, что она хорошая! Какое время года вам нравится?"),
-                entry("что ты умеешь","Я могу:\n- Объяснять концепции программирования\n- Проводить тесты\n- Давать советы по коду\n- Поддерживать беседу"),
-                entry("выход","До свидания! Хорошего дня программирования!"),
-                entry("пока","До скорой встречи! Если будут вопросы - я тут!"),
-                entry("спасибо","Всегда пожалуйста! Обращайся, если что-то понадобится 😊"),
-                entry("хорошо","Отлично! Может продолжим обучение? Или расскажу что-нибудь интересное?"),
-                entry("что нового","В мире программирования всегда что-то происходит! Недавно вышла новая версия Java/Python. Хотите узнать подробности?")
+                entry("погода", "Извините, я не могу проверить погоду, но надеюсь, что она хорошая! Какое время года вам нравится?"),
+                entry("что ты умеешь", "Я могу:\n- Объяснять концепции программирования\n- Проводить тесты\n- Давать советы по коду\n- Поддерживать беседу"),
+                entry("выход", "До свидания! Хорошего дня программирования!"),
+                entry("пока", "До скорой встречи! Если будут вопросы - я тут!"),
+                entry("спасибо", "Всегда пожалуйста! Обращайся, если что-то понадобится 😊"),
+                entry("хорошо", "Отлично! Может продолжим обучение? Или расскажу что-нибудь интересное?"),
+                entry("что нового", "В мире программирования всегда что-то происходит! Недавно вышла новая версия Java/Python. Хотите узнать подробности?")
         );
     }
 
@@ -307,11 +306,45 @@ public class Bot extends TelegramLongPollingBot {
                 })
         );
     }
+
+    private String getWeather(String city) throws Exception {
+        OkHttpClient client = new OkHttpClient();
+        String url = "https://api.openweathermap.org/data/2.5/weather?q=" + city + "&appid=" + WEATHER + "&units=metric&lang=ru";
+
+        Request request = new Request.Builder()
+                .url(url)
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new Exception("Ошибка при запросе к API OpenWeatherMap");
+            }
+
+            String responseBody = response.body().string();
+            Gson gson = new Gson();
+            JsonObject jsonObject = gson.fromJson(responseBody, JsonObject.class);
+
+            if (jsonObject.has("main")) {
+                String weatherDescription = jsonObject.getAsJsonArray("weather").get(0).getAsJsonObject().get("description").getAsString();
+                double temperature = jsonObject.getAsJsonObject("main").get("temp").getAsDouble();
+                int humidity = jsonObject.getAsJsonObject("main").get("humidity").getAsInt();
+
+                return "Погода в городе " + city + ":\n" +
+                        "Температура: " + String.format("%.1f", temperature) + "°C\n" +
+                        "Влажность: " + humidity + "%\n" +
+                        "Описание: " + weatherDescription;
+            } else {
+                return "Город не найден.";
+            }
+        }
+    }
+
+
+
     @Override
     public String getBotUsername() {
         return BotConfig.USER_NAME;
     }
-
     @Override
     public String getBotToken() {
         return BotConfig.TOKEN;
@@ -325,7 +358,6 @@ public class Bot extends TelegramLongPollingBot {
             } else if (update.hasCallbackQuery()) {
                 handleCallbackQuery(update);
             }
-
         } catch (Exception e) {
             log.error("Ошибка при обработке обновления", e);
             sendErrorMessage(update);
@@ -339,22 +371,22 @@ public class Bot extends TelegramLongPollingBot {
         Long chatId = message.getChatId();
         String text = message.getText().toLowerCase();
 
-        // Проверяем, находится ли пользователь в режиме поиска в интернете
         if (Boolean.TRUE.equals(inInternetSearchMode.get(chatId))) {
-            // Обрабатываем текст как запрос для поиска в интернете
             String searchResult = searchInternet(text);
             sendMessage(chatId, searchResult);
-            inInternetSearchMode.put(chatId, false); // Выходим из режима поиска
+            inInternetSearchMode.put(chatId, false);
+            return;
+        }
+        if (text.startsWith("погода") || text.startsWith("weather")) {
+            handleWeatherRequest(chatId, text);
             return;
         }
 
-        // Обработка стандартных команд
         if (text.startsWith("/")) {
             handleCommand(chatId, text, message.getFrom());
             return;
         }
 
-        // Остальная логика обработки сообщений
         if (Boolean.TRUE.equals(inConversationMode.get(chatId))) {
             handleConversation(chatId, text);
             return;
@@ -369,7 +401,6 @@ public class Bot extends TelegramLongPollingBot {
         switch (command) {
             case "/start":
                 sendWelcomeMessage(chatId, user);
-                trackUserAction(user, "start");
                 break;
             case "/test":
                 if (Boolean.TRUE.equals(inInternetSearchMode.get(chatId))) {
@@ -377,11 +408,9 @@ public class Bot extends TelegramLongPollingBot {
                     return;
                 }
                 sendTestSelection(chatId, user);
-                trackUserAction(user, "test_start");
                 break;
             case "/chat":
                 startConversationMode(chatId);
-                trackUserAction(user, "chat_mode");
                 break;
             case "/stop":
                 stopConversationMode(chatId);
@@ -391,33 +420,50 @@ public class Bot extends TelegramLongPollingBot {
                 sendHelpMessage(chatId);
                 break;
             case "/stats":
-                sendUserStats(chatId, user);
+                sendUserStats(chatId);
                 break;
             case "/internet":
                 inInternetSearchMode.put(chatId, true);
                 sendMessage(chatId, "Введите запрос для поиска в интернете:");
-                trackUserAction(user, "internet_search");
+                break;
+            case "/weather":
+                sendMessage(chatId,"Введите: погода 'город' ");
                 break;
             default:
                 sendMessage(chatId, "Неизвестная команда. Попробуйте /help");
         }
     }
+
     private void stopInternetSearchMode(Long chatId) {
         inInternetSearchMode.put(chatId, false);
         sendMessage(chatId, "Режим поиска в интернете завершен.");
     }
+    private void handleWeatherRequest(Long chatId, String text) {
+        try {
+            // Извлекаем название города из запроса
+            String city = text.replaceAll("погода|weather", "").trim();
 
-    private void trackUserAction(User user, String action) {
-        UserStats stats = userStats.computeIfAbsent(user.getId(), id -> new UserStats(user));
-        stats.recordAction(action);
+            if (city.isEmpty()) {
+                sendMessage(chatId, "Пожалуйста, укажите город после команды. Например: \"погода Брест\"");
+                return;
+            }
+
+            String weatherInfo = getWeather(city);
+            sendMessage(chatId, weatherInfo);
+        } catch (Exception e) {
+            log.error("Ошибка при получении погоды", e);
+            sendMessage(chatId, "Не удалось получить данные о погоде. Попробуйте позже или укажите другой город.");
+        }
     }
 
-    private void sendUserStats(Long chatId, User user) {
-        UserStats stats = userStats.get(user.getId());
-        if (stats != null) {
-            sendMessage(chatId, stats.getStats());
+
+    private void sendUserStats(Long chatId) {
+        Student student = activeUsers.get(chatId);
+        if (student != null) {
+            // Используем getTestResults() для вывода полной статистики
+            sendMessage(chatId, student.getTestResults());
         } else {
-            sendMessage(chatId, "Статистика не найдена. Пройдите тест для начала сбора статистики.");
+            sendMessage(chatId, "Сначала пройдите тест для получения статистики.");
         }
     }
 
@@ -494,6 +540,7 @@ public class Bot extends TelegramLongPollingBot {
                 "- ООП\n" +
                 "- Пример кода\n" +
                 "- Шутку про программистов\n" +
+                "- Погода\n" +
                 "- Мотивацию";
     }
 
@@ -560,6 +607,7 @@ public class Bot extends TelegramLongPollingBot {
                     "- Задавать вопросы по Java/Python\n" +
                     "- Запрашивать примеры кода\n" +
                     "- Общатся с ботом.\n" +
+                    "- Узнать погоду.\n" +
                     "- Обсуждать концепции программирования\n" +
                     "- А так же можете узнать список команд которые доступны /help\n\n" +
                     "🔹 Для возврата к тестам нажмите /test 🔹";
@@ -577,16 +625,18 @@ public class Bot extends TelegramLongPollingBot {
     }
 
     private void sendWelcomeMessage(Long chatId, User user) {
+        String photoPath = "images/1697737128_flomaster-top-p-krutie-risunki-simpsoni-vkontakte-1.jpg";
         String welcomeText = String.format(
                 "Привет, %s! Я бот DarkGora для веселья.\n\n" +
                         "Доступные команды:\n" +
                         "/test - начать тест\n" +
                         "/chat - свободное общение\n" +
-                        "/help - помощь\n\n" +
+                        "/help - помощь\n" +
+                        "/weather - погода\n\n" +
                         "Выберите что вам интересно!",
                 user.getFirstName());
+        sendPhoto(chatId, photoPath, welcomeText);
 
-        sendMessage(chatId, welcomeText);
     }
 
     private void sendHelpMessage(Long chatId) {
@@ -731,25 +781,13 @@ public class Bot extends TelegramLongPollingBot {
     private void finishTest(Long chatId, Student student) {
         log.info("Пользователь завершил тест: {} {}", student.getFirstName(), student.getId());
 
-        // Запись статистики
-        UserStats stats = userStats.get(student.getId());
-        if (stats != null) {
-            stats.recordTestResult(
-                    student.getCorrectAnswersCount(),
-                    student.getShuffledQuestions().size()
-            );
-        }
+        // Отправляем подробные результаты теста
+        sendMessage(chatId, student.getTestResults());
 
-        // Отправка в группу
+        // Отправка в группу (если нужно)
         String groupMessage = String.format("%s %s завершил тест с %d правильными ответами.",
                 student.getId(), student.getFirstName(), student.getCorrectAnswersCount());
         sendMessage(BotConfig.GROUP_ID, groupMessage);
-
-        // Результат пользователю
-        String result = String.format("Тест завершен! Ваш результат: %d/%d",
-                student.getCorrectAnswersCount(),
-                student.getShuffledQuestions().size());
-        sendMessage(chatId, result);
 
         // Клавиатура с опциями
         SendMessage message = new SendMessage();
@@ -776,6 +814,7 @@ public class Bot extends TelegramLongPollingBot {
 
         sendMessage(message);
     }
+
 
     private void sendNextQuestionButton(Long chatId) {
         SendMessage message = new SendMessage();
@@ -860,45 +899,6 @@ public class Bot extends TelegramLongPollingBot {
                     log.error("Ошибка при закрытии потока: {}", e.getMessage());
                 }
             }
-        }
-    }
-
-    private static class UserStats {
-        private final User user;
-        private int testsTaken;
-        private int correctAnswers;
-        private int totalQuestions;
-        private final List<String> lastActions = new ArrayList<>();
-
-        public UserStats(User user) {
-            this.user = user;
-        }
-
-        public void recordAction(String action) {
-            lastActions.add(action);
-            if (lastActions.size() > 10) {
-                lastActions.remove(0);
-            }
-        }
-
-        public void recordTestResult(int correct, int total) {
-            testsTaken++;
-            correctAnswers += correct;
-            totalQuestions += total;
-        }
-        
-        public String getStats() {
-            return String.format(
-                    "Статистика для %s:\n" +
-                            "Тестов пройдено: %d\n" +
-                            "Правильных ответов: %d/%d (%.1f%%)\n" +
-                            "Последние действия: %s",
-                    user.getFirstName(),
-                    testsTaken,
-                    correctAnswers, totalQuestions,
-                    totalQuestions > 0 ? (correctAnswers * 100.0 / totalQuestions) : 0,
-                    String.join(", ", lastActions)
-            );
         }
     }
 }

@@ -94,7 +94,7 @@ public class Student {
     public String getTestResults() {
         StringBuilder sb = new StringBuilder();
         sb.append("Результаты теста по ")
-                .append(testType.equals("java") ? "Java" : "Python")
+                .append(testType.equalsIgnoreCase("java") ? "Java" : "Python")
                 .append(" для ").append(firstName).append(":\n\n");
 
         if (shuffledQuestions.isEmpty()) {
@@ -106,32 +106,27 @@ public class Student {
                 .append("Правильных ответов: ").append(correctAnswersCount).append("\n")
                 .append("Успешность: ").append(String.format("%.1f%%", getSuccessPercentage())).append("\n\n");
 
-        appendQuestionDetails(sb);
-
-        return sb.toString();
-    }
-
-    private void appendQuestionDetails(StringBuilder sb) {
         sb.append("Детализация:\n");
         for (int i = 0; i < shuffledQuestions.size(); i++) {
             Question q = shuffledQuestions.get(i);
             String userAnswer = i < userAnswers.size() ? userAnswers.get(i) : "Нет ответа";
-            boolean isCorrect = q.isCorrectAnswer(userAnswer);
+            String correctAnswer = q.getCorrectAnswer();
 
-            sb.append(i + 1).append(". ").append(q.getQuestionText()).append("\n")
+            sb.append(i+1).append(". ").append(q.getQuestionText()).append("\n")
                     .append("Ваш ответ: ").append(userAnswer)
-                    .append(isCorrect ? " ✓" : " ✗").append("\n");
-
-            if (!isCorrect) {
-                sb.append("Правильно: ").append(q.getCorrectAnswer()).append("\n");
-            }
-            sb.append("\n");
+                    .append(userAnswer.equals(correctAnswer) ? " ✓" : " ✗").append("\n")
+                    .append("Правильно: ").append(correctAnswer).append("\n\n");
         }
-    }
 
+        return sb.toString();
+    }
     public void setCurrentQuestionIndex(int index) {
         if (isValidQuestionIndex(index)) {
             this.currentQuestionIndex = index;
         }
+    }
+
+    public String getTestTypeDisplayName() {
+        return testType.equals("java") ? "Java" : "Python";
     }
 }
