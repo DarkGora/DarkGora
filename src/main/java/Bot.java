@@ -554,13 +554,15 @@ public class Bot extends TelegramLongPollingBot {
         inConversationMode.put(chatId, true);
 
         try {
-            String photoPath = "images/chat_mode.jpg";
-            String caption = "🔹 Режим свободного общения активирован!\n\n" +
+            String photoPath = "images/eab2e77f92de15a95ebf828c08fe5290.jpg";
+            String caption = "🔹 Режим свободного общения активирован!🔹\n\n" +
                     "Теперь вы можете:\n" +
                     "- Задавать вопросы по Java/Python\n" +
                     "- Запрашивать примеры кода\n" +
-                    "- Обсуждать концепции программирования\n\n" +
-                    "Для возврата к тестам нажмите /test";
+                    "- Общатся с ботом.\n" +
+                    "- Обсуждать концепции программирования\n" +
+                    "- А так же можете узнать список команд которые доступны /help\n\n" +
+                    "🔹 Для возврата к тестам нажмите /test 🔹";
 
             sendPhoto(chatId, photoPath, caption);
         } catch (Exception e) {
@@ -588,14 +590,13 @@ public class Bot extends TelegramLongPollingBot {
     }
 
     private void sendHelpMessage(Long chatId) {
-        String helpText = "Я могу:\n" +
+        String helpText = "꧁Я могу:꧂\n\n" +
                 "1. Проводить тесты по Java и Python (/test)\n" +
                 "2. Просто общаться (/chat)\n" +
-                "3. Делать запросы в википедию (/internet)\n\n" +
+                "3. Узнать свою статистику по тестам. (/stats)\n" +
+                "4. Делать запросы в википедию (/internet)\n\n" +
                 "Во время теста вы можете прервать его и начать заново.\n" +
                 "Для выхода из режима общения напишите /stop";
-
-
         sendMessage(chatId, helpText);
     }
 
@@ -606,7 +607,7 @@ public class Bot extends TelegramLongPollingBot {
         message.setReplyMarkup(KeyboardFactory.createTestSelectionKeyboard());
 
         try {
-            String photoPath = "images/test_selection.jpg";
+            String photoPath = "images/dfefc27b717e11ee8bacaaafe6635749_upscaled.jpg";
             String photoCaption = "Добро пожаловать в тесты, " + user.getFirstName() + "!";
             sendPhoto(chatId, photoPath, photoCaption);
             log.info("Пользователь начинает тест: {} {}", user.getFirstName(), user.getId());
@@ -885,7 +886,7 @@ public class Bot extends TelegramLongPollingBot {
             correctAnswers += correct;
             totalQuestions += total;
         }
-
+        
         public String getStats() {
             return String.format(
                     "Статистика для %s:\n" +
