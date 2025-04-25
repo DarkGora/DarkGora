@@ -8,19 +8,23 @@ import okhttp3.Request;
 import okhttp3.Response;
 import org.telegram.telegrambots.bots.DefaultBotOptions;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
-import org.telegram.telegrambots.meta.api.objects.InputFile;
-import org.telegram.telegrambots.meta.api.objects.Message;
-import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.meta.api.objects.User;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.*;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
 import java.io.*;
+import java.io.File;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static java.util.Map.entry;
@@ -45,14 +49,35 @@ public class Bot extends TelegramLongPollingBot {
     private final Map<String, String> motivation = initMotivation();
     private final Map<String, String> personalQuestions = initPersonalQuestions();
     private final Map<String, String[]> followUpQuestions = initFollowUpQuestions();
+    private final Map<Long, List<TestHistory>> testHistory = new HashMap<>();
+    private final Map<Long, CalculatorMode> calculatorModes = new HashMap<>();
+    private final Map<Long, String> calculatorInputs = new HashMap<>();
+    private final Map<Long, Integer> calculatorMessageIds = new HashMap<>();
+    //мини игра
+    private Map<Long, GameMode> gameModes = new ConcurrentHashMap<>();
+    private Map<Long, Integer> targetNumbers = new ConcurrentHashMap<>();
+    private Map<Long, Integer> guessAttempts = new ConcurrentHashMap<>();
+    private Map<Long, Integer> rpsScores = new ConcurrentHashMap<>(); // Счётчик побед
+    private Map<Long, Long> rpsChallenges = new ConcurrentHashMap<>();
+    private final Map<Long, Integer> lastMessageIds = new ConcurrentHashMap<>();
+    // Добавляем новые поля для системы вызовов
+    private Map<Long, Boolean> awaitingChallengeTarget = new ConcurrentHashMap<>();
+
 
     public Bot(DefaultBotOptions options) {
         super(options);
         initializeQuestions();
     }
+    private enum CalculatorMode {
+        OFF,
+        ON
+    }
+    private enum GameMode {
+        OFF, GUESS_NUMBER, RPS
+    }
 
     private void initializeQuestions() {
-        // Инициализация Java вопросов
+        //  Java вопросов
         javaQuestions.addAll(Arrays.asList(
                 new Question("Как изначально назывался язык Java?",
                         List.of("Oak", "Tree", "Brich", "Pine"), 0),
@@ -339,8 +364,448 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
 
+    private void startCalculatorMode(Long chatId) {
+        if (checkActiveModes(chatId)) return;
+        calculatorModes.put(chatId, CalculatorMode.ON);
+        calculatorInputs.put(chatId, "");
 
+        InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
 
+        // Первый ряд: 7 8 9 /
+        rows.add(Arrays.asList(
+                createCalcButton("7"),
+                createCalcButton("8"),
+                createCalcButton("9"),
+                createCalcButton("/", "Деление")
+        ));
+
+        // Второй ряд: 4 5 6 *
+        rows.add(Arrays.asList(
+                createCalcButton("4"),
+                createCalcButton("5"),
+                createCalcButton("6"),
+                createCalcButton("*", "Умножение")
+        ));
+
+        // Третий ряд: 1 2 3 -
+        rows.add(Arrays.asList(
+                createCalcButton("1"),
+                createCalcButton("2"),
+                createCalcButton("3"),
+                createCalcButton("-", "Вычитание")
+        ));
+
+        // Четвертый ряд: 0 . = +
+        rows.add(Arrays.asList(
+                createCalcButton("0"),
+                createCalcButton(".", "Точка"),
+                createCalcButton("=", "Равно"),
+                createCalcButton("+", "Сложение")
+        ));
+
+        // Пятый ряд: C ⌫ ( )
+        rows.add(Arrays.asList(
+                createCalcButton("C", "Очистить"),
+                createCalcButton("⌫", "Удалить"),
+                createCalcButton("(", "Открыть скобку"),
+                createCalcButton(")", "Закрыть скобку")
+        ));
+
+        // Шестой ряд: Выход
+        rows.add(Collections.singletonList(
+                createCalcButton("Exit", "Выход из калькулятора")
+        ));
+
+        keyboard.setKeyboard(rows);
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId.toString());
+        message.setText("🧮 Режим калькулятора\nТекущее выражение: ");
+        message.setReplyMarkup(keyboard);
+
+        try {
+            Message sentMessage = execute(message);
+            calculatorMessageIds.put(chatId, sentMessage.getMessageId());
+        } catch (TelegramApiException e) {
+            log.error("Ошибка при запуске калькулятора", e);
+            sendMessage(chatId, "Не удалось запустить калькулятор. Попробуйте позже.");
+        }
+    }
+    private InlineKeyboardButton createCalcButton(String text, String description) {
+        return InlineKeyboardButton.builder()
+                .text(text)
+                .callbackData("calc_" + text)
+                .build();
+    }
+    private InlineKeyboardButton createCalcButton(String text) {
+        return createCalcButton(text, text);
+    }
+
+    private double evaluateExpression(String expr) throws IllegalArgumentException {
+        // Удаляем все пробелы
+        expr = expr.replaceAll("\\s+", "");
+
+        // Проверяем баланс скобок
+        if (!checkParenthesesBalance(expr)) {
+            throw new IllegalArgumentException("Несбалансированные скобки в выражении");
+        }
+
+        // Проверяем корректность выражения
+        if (!isValidMathExpression(expr)) {
+            throw new IllegalArgumentException("Недопустимое математическое выражение");
+        }
+
+        try {
+            ScriptEngineManager manager = new ScriptEngineManager();
+            ScriptEngine engine = manager.getEngineByName("js");
+
+            // Проверяем деление на ноль
+            if (expr.contains("/0") && !expr.contains("/0.")) {
+                throw new IllegalArgumentException("Деление на ноль недопустимо");
+            }
+
+            Object result = engine.eval(expr);
+            return ((Number) result).doubleValue();
+        } catch (ScriptException e) {
+            throw new IllegalArgumentException("Ошибка вычисления: " + e.getMessage());
+        }
+    }
+    private boolean checkParenthesesBalance(String expr) {
+        int balance = 0;
+        for (char c : expr.toCharArray()) {
+            if (c == '(') balance++;
+            if (c == ')') balance--;
+            if (balance < 0) return false;
+        }
+        return balance == 0;
+    }
+    private String formatResult(double result) {
+        // Если число целое, показываем без десятичной части
+        if (result == (long) result) {
+            return String.format("%d", (long) result);
+        }
+
+        // Форматируем с 4 знаками после запятой и убираем лишние нули
+        String formatted = String.format("%.4f", result);
+        formatted = formatted.replaceAll("\\.?0+$", "");
+
+        // Для очень больших/маленьких чисел используем научную нотацию
+        if (Math.abs(result) > 1_000_000 || Math.abs(result) < 0.0001) {
+            formatted = String.format("%.4e", result).replace(",", ".");
+        }
+
+        return formatted;
+    }
+    private void handleCalculatorInput(Long chatId, String input) {
+        // Проверка на команду остановки
+        if ("/stop".equalsIgnoreCase(input.trim())) {
+            exitCalculatorMode(chatId);
+           // sendMessage(chatId, "2.0"); доп текст
+            return;
+        }
+
+        String currentInput = calculatorInputs.getOrDefault(chatId, "");
+
+        try {
+            switch (input) {
+                case "=":
+                    if (!currentInput.isEmpty()) {
+                        double result = evaluateExpression(currentInput);
+                        String formattedResult = formatResult(result);
+                        calculatorInputs.put(chatId, formattedResult);
+                        updateCalculatorDisplay(chatId, "Результат: " + formattedResult +
+                                "\n\nДля выхода /stop");
+                    }
+                    break;
+                case "C":
+                    calculatorInputs.put(chatId, "");
+                    updateCalculatorDisplay(chatId);
+                    break;
+                case "⌫":
+                    if (!currentInput.isEmpty()) {
+                        calculatorInputs.put(chatId, currentInput.substring(0, currentInput.length() - 1));
+                        updateCalculatorDisplay(chatId);
+                    }
+                    break;
+                case "Exit":
+                    exitCalculatorMode(chatId);
+                    break;
+                default:
+                    if (input.matches("[0-9+\\-*/.()]")) {
+                        if (isOperator(input) && !currentInput.isEmpty() &&
+                                isOperator(currentInput.substring(currentInput.length() - 1))) {
+                            calculatorInputs.put(chatId, currentInput.substring(0, currentInput.length() - 1) + input);
+                        } else {
+                            calculatorInputs.put(chatId, currentInput + input);
+                        }
+                        updateCalculatorDisplay(chatId);
+                    }
+            }
+        } catch (Exception e) {
+            log.error("Ошибка обработки ввода калькулятора", e);
+            updateCalculatorDisplay(chatId, "Ошибка: " + e.getMessage() +
+                    "\n\nПопробуйте снова или /stop для выхода");
+        }
+    }
+    private boolean isOperator(String s) {
+        return s.matches("[+\\-*/]");
+    }
+
+    private boolean isValidMathExpression(String expr) {
+        // Проверяем на наличие недопустимых символов
+        if (!expr.matches("^[0-9+\\-*/.()]+$")) {
+            return false;
+        }
+
+        // Проверяем на несколько операторов подряд
+        if (expr.matches(".*[+\\-*/]{2,}.*")) {
+            return false;
+        }
+
+        // Проверяем на точку без цифр вокруг
+        if (expr.matches(".*\\D\\.\\D.*") || expr.startsWith(".") || expr.endsWith(".")) {
+            return false;
+        }
+
+        return true;
+    }
+    private void updateCalculatorDisplay(Long chatId) {
+        updateCalculatorDisplay(chatId, calculatorInputs.getOrDefault(chatId, ""));
+    }
+
+    private void updateCalculatorDisplay(Long chatId, String text) {
+        if (!calculatorMessageIds.containsKey(chatId)) {
+            return;
+        }
+
+        EditMessageText editMessage = new EditMessageText();
+        editMessage.setChatId(chatId.toString());
+        editMessage.setMessageId(calculatorMessageIds.get(chatId));
+        editMessage.setText("🧮 Режим калькулятора\nТекущее выражение: " + text);
+
+        try {
+            execute(editMessage);
+        } catch (TelegramApiException e) {
+            log.error("Ошибка обновления калькулятора", e);
+        }
+    }
+    //мини игра
+
+    private void startNumberGame(Long chatId) {
+        // Сначала сбросим предыдущую игру, если была
+        resetGame(chatId);
+
+        gameModes.put(chatId, GameMode.GUESS_NUMBER);
+        targetNumbers.put(chatId, new Random().nextInt(10) + 1);
+        guessAttempts.put(chatId, 0);
+
+        String message = "🎮 Игра 'Угадай число от 1 до 10' началась!\n\n" +
+                "Попробуй угадать число, которое я загадал.\n" +
+                "Просто напиши число от 1 до 10.\n\n" +
+                "Чтобы остановить игру, напиши /stop";
+        sendMessage(chatId, message);
+    }
+    private void handleNumberGame(Long chatId, String text) {
+        try {
+            // Проверяем, не хочет ли пользователь остановить игру
+            if ("/stop".equalsIgnoreCase(text.trim())) {
+                endNumberGame(chatId, false, guessAttempts.get(chatId));
+                return;
+            }
+
+            int guess = Integer.parseInt(text);
+            int target = targetNumbers.get(chatId);
+            int attempts = guessAttempts.get(chatId) + 1;
+            guessAttempts.put(chatId, attempts);
+
+            if (guess < 1 || guess > 10) {
+                sendMessage(chatId, "Пожалуйста, введи число от 1 до 10");
+                return;
+            }
+
+            if (guess == target) {
+                endNumberGame(chatId, true, attempts);
+            } else {
+                String hint = guess < target ? "больше" : "меньше";
+                sendMessage(chatId, "Не угадал! Моё число " + hint + " чем " + guess +
+                        "\nПопытка #" + attempts + "\n\nМожешь остановить игру командой /stop");
+            }
+        } catch (NumberFormatException e) {
+            sendMessage(chatId, "Пожалуйста, вводи только числа от 1 до 10 или /stop для выхода");
+        }
+    }
+
+    private void endNumberGame(Long chatId, boolean win, int attempts) {
+        String message;
+        if (win) {
+            message = "🎉 Поздравляю! Ты угадал число за " + attempts + " попыток!";
+        } else {
+            message = "🛑 Игра остановлена. Загаданное число: " +
+                    targetNumbers.getOrDefault(chatId, 0);
+        }
+
+        sendMessage(chatId, message + "\n\nСыграем ещё? Напиши /game");
+
+        resetGame(chatId);
+    }
+
+    private void resetGame(Long chatId) {
+        gameModes.remove(chatId);
+        targetNumbers.remove(chatId);
+        guessAttempts.remove(chatId);
+        rpsScores.remove(chatId);
+        rpsChallenges.remove(chatId);
+        awaitingChallengeTarget.remove(chatId);
+    }
+
+    private void startRPSGame(Long chatId) {
+        try {
+            gameModes.put(chatId, GameMode.RPS);
+            rpsScores.putIfAbsent(chatId, 0);
+
+            InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
+            List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+
+            // Используем KeyboardFactory.createButton()
+            rows.add(Arrays.asList(
+                    KeyboardFactory.createButton("✊", "rps_rock"),
+                    KeyboardFactory.createButton("✌️", "rps_scissors"),
+                    KeyboardFactory.createButton("✋", "rps_paper")
+            ));
+            rows.add(Collections.singletonList(
+                    KeyboardFactory.createButton("🏁 Завершить игру", "rps_exit")
+            ));
+
+            keyboard.setKeyboard(rows);
+
+            SendMessage message = new SendMessage();
+            message.setChatId(chatId.toString());
+            message.setText("🎮 *Камень-Ножницы-Бумага*\n\nТвои победы: " +
+                    rpsScores.getOrDefault(chatId, 0));
+            message.setReplyMarkup(keyboard);
+
+            Message sentMessage = execute(message);
+            lastMessageIds.put(chatId, sentMessage.getMessageId());
+        } catch (Exception e) {
+            log.error("Ошибка старта RPS", e);
+        }
+    }
+
+    private void processRPSMove(Long chatId, String playerChoice) {
+        try {
+            String[] options = {"✊ Камень", "✌️ Ножницы", "✋ Бумага"};
+            int botChoice = new Random().nextInt(3);
+            int playerChoiceInt = Integer.parseInt(playerChoice);
+
+            String result;
+            if (playerChoiceInt == botChoice) {
+                result = "🤝 Ничья!";
+            } else if ((playerChoiceInt - botChoice + 3) % 3 == 1) {
+                result = "😃 Ты победил!";
+                rpsScores.merge(chatId, 1, Integer::sum);
+            } else {
+                result = "🤖 Я победил!";
+            }
+
+            EditMessageText editMessage = new EditMessageText();
+            editMessage.setChatId(chatId.toString());
+            editMessage.setMessageId(lastMessageIds.get(chatId));
+            editMessage.setText(String.format(
+                    "%s\n\nТы: %s\nБот: %s\n\nПобеды: %d",
+                    result,
+                    options[playerChoiceInt],
+                    options[botChoice],
+                    rpsScores.getOrDefault(chatId, 0)
+            ));
+            execute(editMessage);
+
+            startRPSGame(chatId); // Обновляем интерфейс
+        } catch (Exception e) {
+            log.error("Ошибка обработки хода", e);
+        }
+    }
+
+    private void startRPSChallenge(Long initiatorId, Long opponentId) {
+        try {
+            awaitingChallengeTarget.remove(initiatorId); // Сбрасываем флаг ожидания
+// Создаем final копии для использования в лямбде
+            final Long finalInitiatorId = initiatorId;
+            final Long finalOpponentId = opponentId;
+            final Student finalOpponent = activeUsers.get(opponentId);
+            // Проверка на самовызов
+            if (initiatorId.equals(opponentId)) {
+                sendMessage(initiatorId, "❌ Нельзя играть против самого себя!");
+                return;
+            }
+
+            Student opponent = activeUsers.get(opponentId);
+            if (opponent == null) {
+                sendMessage(initiatorId, "❌ Пользователь не найден или неактивен");
+                return;
+            }
+
+            // Проверяем, не занят ли оппонент
+            if (gameModes.getOrDefault(opponentId, GameMode.OFF) != GameMode.OFF) {
+                sendMessage(initiatorId, "❌ Этот пользователь уже занят в другой игре");
+                return;
+            }
+
+            // Сохраняем вызов
+            rpsChallenges.put(initiatorId, opponentId);
+            rpsChallenges.put(opponentId, initiatorId);
+
+            // Создаем клавиатуру
+            InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
+            keyboard.setKeyboard(List.of(
+                    List.of(KeyboardFactory.createButton("✅ Принять вызов", "accept_rps_" + initiatorId)),
+                    List.of(KeyboardFactory.createButton("❌ Отклонить", "decline_rps"))
+            ));
+
+            // Формируем сообщение
+            Student initiator = activeUsers.get(initiatorId);
+            String initiatorName = initiator != null ? initiator.getFullName() : "Игрок";
+
+            SendMessage challenge = new SendMessage();
+            challenge.setChatId(opponentId.toString());
+            challenge.setText(String.format(
+                    "🎮 *Вызов на игру!*\n\n" +
+                            "%s вызывает вас в Камень-Ножницы-Бумага!\n\n" +
+                            "У вас есть 2 минуты чтобы ответить.",
+                    initiatorName
+            ));
+            challenge.setReplyMarkup(keyboard);
+            challenge.setParseMode("Markdown");
+
+            // Отправляем и сохраняем ID сообщения
+            Message sentMessage = execute(challenge);
+            lastMessageIds.put(opponentId, sentMessage.getMessageId());
+
+            // Подтверждение инициатору
+            sendMessage(initiatorId, String.format(
+                    "✅ Вызов отправлен %s! Ожидаем ответа...",
+                    opponent.getFullName()
+            ));
+
+            // Таймер для автоматического отклонения
+            new Timer().schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    if (rpsChallenges.containsKey(finalInitiatorId)) {
+                        rpsChallenges.remove(finalInitiatorId);
+                        rpsChallenges.remove(finalOpponentId);
+                        sendMessage(finalInitiatorId,
+                                "⌛ Время вызова истекло. " + finalOpponent.getFullName() + " не ответил.");
+                    }
+                }
+            }, 2 * 60 * 1000);
+
+        } catch (Exception e) {
+            log.error("Ошибка отправки вызова", e);
+            sendMessage(initiatorId, "⚠️ Ошибка при отправке вызова. Попробуйте позже.");
+        }
+    }
+    //конец игры там 2
     @Override
     public String getBotUsername() {
         return BotConfig.USER_NAME;
@@ -353,11 +818,34 @@ public class Bot extends TelegramLongPollingBot {
     @Override
     public void onUpdateReceived(Update update) {
         try {
-            if (update.hasMessage() && update.getMessage().hasText()) {
-                handleMessage(update);
+            if (update.hasMessage()) {
+                Message message = update.getMessage();
+
+                // Обработка только текстовых сообщений и команд
+                if (message.hasText()) {
+                    handleMessage(update);
+                }
+                // Можно добавить обработку других типов сообщений (документы, фото и т.д.)
+                else if (message.hasDocument() || message.hasPhoto()) {
+                    handleNonTextMessage(update);
+                }
+
             } else if (update.hasCallbackQuery()) {
-                handleCallbackQuery(update);
+                CallbackQuery callbackQuery = update.getCallbackQuery();
+                Long chatId = callbackQuery.getMessage().getChatId();
+
+                // Проверяем режим калькулятора первым
+                if (calculatorModes.getOrDefault(chatId, CalculatorMode.OFF) == CalculatorMode.ON) {
+                    handleCalculatorCallback(update);
+                } else {
+                    handleCallbackQuery(update);
+                }
+
+            } else if (update.hasEditedMessage()) {
+                // Обработка редактированных сообщений
+                handleEditedMessage(update);
             }
+
         } catch (Exception e) {
             log.error("Ошибка при обработке обновления", e);
             sendErrorMessage(update);
@@ -377,8 +865,36 @@ public class Bot extends TelegramLongPollingBot {
             inInternetSearchMode.put(chatId, false);
             return;
         }
+        if (awaitingChallengeTarget.getOrDefault(chatId, false)) {
+            handleChallengeTargetInput(chatId, text);
+            return;
+        }
+        // Проверяем режим игры перед другими обработчиками
+        if (gameModes.getOrDefault(chatId, GameMode.OFF) == GameMode.GUESS_NUMBER) {
+            handleNumberGame(chatId, text);
+            return;
+        }
         if (text.startsWith("погода") || text.startsWith("weather")) {
             handleWeatherRequest(chatId, text);
+            return;
+        }
+        // Проверяем, активен ли режим калькулятора
+        if (calculatorModes.getOrDefault(chatId, CalculatorMode.OFF) == CalculatorMode.ON) {
+            handleCalculatorInput(chatId, text);
+            return;
+        }
+        if (awaitingChallengeTarget.getOrDefault(chatId, false)) {
+            try {
+                String input = message.getText().trim();
+                Long opponentId = resolveUserId(input); // Метод для преобразования ввода в ID
+                if (opponentId != null) {
+                    startRPSChallenge(chatId, opponentId);
+                } else {
+                    sendMessage(chatId, "Пользователь не найден. Попробуйте еще раз:");
+                }
+            } catch (Exception e) {
+                sendMessage(chatId, "Ошибка обработки запроса. Попробуйте еще раз:");
+            }
             return;
         }
 
@@ -396,6 +912,75 @@ public class Bot extends TelegramLongPollingBot {
             sendTestSelection(chatId, message.getFrom());
         }
     }
+    //mini game
+    private void handleChallengeTargetInput(Long chatId, String input) {
+        try {
+            Long opponentId = resolveUserId(input);
+            if (opponentId != null) {
+                startRPSChallenge(chatId, opponentId);
+            } else {
+                sendMessage(chatId, "❌ Пользователь не найден. Попробуйте еще раз или отправьте /cancel");
+            }
+        } catch (Exception e) {
+            log.error("Ошибка обработки цели вызова", e);
+            sendMessage(chatId, "⚠️ Ошибка обработки запроса. Попробуйте еще раз:");
+        }
+    }
+    private Long resolveUserId(String input) {
+        // Удаляем возможные пробелы и @
+        input = input.trim().replace("@", "");
+
+        try {
+            // Если ввод - числовой ID
+            if (input.matches("\\d+")) {
+                return Long.parseLong(input);
+            }
+
+            // Поиск по username в activeUsers
+            String finalInput = input;
+            return activeUsers.entrySet().stream()
+                    .filter(entry -> finalInput.equalsIgnoreCase(entry.getValue().getUserName()))
+                    .map(Map.Entry::getKey)
+                    .findFirst()
+                    .orElse(null);
+
+        } catch (Exception e) {
+            log.error("Ошибка разрешения ID пользователя", e);
+            return null;
+        }
+    }
+    //finish
+    private void handleCalculatorCallback(Update update) {
+        String callbackData = update.getCallbackQuery().getData();
+        Long chatId = update.getCallbackQuery().getMessage().getChatId();
+
+        if (callbackData.startsWith("calc_")) {
+            String buttonValue = callbackData.substring(5);
+            handleCalculatorInput(chatId, buttonValue);
+        } else {
+            // Если это не калькулятор, передаем обычному обработчику
+            handleCallbackQuery(update);
+        }
+    }
+    private void handleNonTextMessage(Update update) {
+        Message message = update.getMessage();
+        Long chatId = message.getChatId();
+
+        if (calculatorModes.getOrDefault(chatId, CalculatorMode.OFF) == CalculatorMode.ON) {
+            sendMessage(chatId, "В режиме калькулятора принимаются только текстовые команды");
+            return;
+        }
+
+        // Обработка других типов сообщений
+        sendMessage(chatId, "Извините, я пока не умею обрабатывать этот тип сообщений");
+    }
+    private void handleEditedMessage(Update update) {
+        Message editedMessage = update.getEditedMessage();
+        Long chatId = editedMessage.getChatId();
+
+        // Можно добавить логику обработки редактированных сообщений
+        log.info("Message edited in chat {}: {}", chatId, editedMessage.getText());
+    }
 
     private void handleCommand(Long chatId, String command, User user) {
         switch (command) {
@@ -409,12 +994,30 @@ public class Bot extends TelegramLongPollingBot {
                 }
                 sendTestSelection(chatId, user);
                 break;
+            case "/game":
+                startNumberGame(chatId);
+                break;
+            case "/challenge":
+                sendMessage(chatId, "Введите @username или ID пользователя для вызова (или /cancel для отмены):");
+                awaitingChallengeTarget.put(chatId, true);
+                break;
+            case "/accept_rps":
+                // Обработка принятия вызова
+                break;
+            case "/rps":
+                startRPSGame(chatId);
+                break;
             case "/chat":
                 startConversationMode(chatId);
                 break;
+            case "/cancel":
+                if (awaitingChallengeTarget.containsKey(chatId)) {
+                    awaitingChallengeTarget.remove(chatId);
+                    sendMessage(chatId, "❌ Вызов отменен");
+                }
+                break;
             case "/stop":
-                stopConversationMode(chatId);
-                stopInternetSearchMode(chatId);
+                handleStopCommand(chatId);
                 break;
             case "/help":
                 sendHelpMessage(chatId);
@@ -422,22 +1025,203 @@ public class Bot extends TelegramLongPollingBot {
             case "/stats":
                 sendUserStats(chatId);
                 break;
+            case "/history":
+                sendMessage(chatId, getFullHistory(user.getId()));
+                break;
             case "/internet":
-                inInternetSearchMode.put(chatId, true);
-                sendMessage(chatId, "Введите запрос для поиска в интернете:");
+                if (Boolean.TRUE.equals(inInternetSearchMode.get(chatId))) {
+                    inInternetSearchMode.put(chatId, false);
+                    sendMessage(chatId, "🔍 Режим поиска отключен");
+                } else {
+                    inInternetSearchMode.put(chatId, true);
+                    sendMessage(chatId, "🔍 Введите запрос для поиска в интернете:");
+                }
                 break;
             case "/weather":
                 sendMessage(chatId,"Введите: погода 'город' ");
+                break;
+            case "/calculator":
+                if (calculatorModes.getOrDefault(chatId, CalculatorMode.OFF) == CalculatorMode.ON) {
+                    exitCalculatorMode(chatId);
+                } else {
+                    startCalculatorMode(chatId);
+                }
+                break;
+            case "/exit":
+                exitCalculatorMode(chatId);
                 break;
             default:
                 sendMessage(chatId, "Неизвестная команда. Попробуйте /help");
         }
     }
+    private void handleStopCommand(Long chatId) {
+        String activeMode = getActiveMode(chatId);
 
-    private void stopInternetSearchMode(Long chatId) {
-        inInternetSearchMode.put(chatId, false);
-        sendMessage(chatId, "Режим поиска в интернете завершен.");
+        switch (activeMode) {
+            case "calculator":
+                calculatorModes.put(chatId, CalculatorMode.OFF);
+                calculatorInputs.remove(chatId);
+                calculatorMessageIds.remove(chatId);
+                sendMessage(chatId, "🧮 Режим калькулятора выключен");
+                break;
+
+            case "game":
+                GameMode gameMode = gameModes.get(chatId);
+                if (gameMode == GameMode.GUESS_NUMBER) {
+                    endNumberGame(chatId, false, guessAttempts.getOrDefault(chatId, 0));
+                    sendMessage(chatId, "🛑 Игра 'Угадай число' остановлена");
+                } else if (gameMode == GameMode.RPS) {
+                    endRPSGame(chatId);
+                    sendMessage(chatId, "🛑 Игра 'Камень-ножницы-бумага' остановлена");
+                } else {
+                    sendMessage(chatId, "ℹ️ Нет активной игры для остановки");
+                }
+                break;
+            case "internet":
+                inInternetSearchMode.put(chatId, false);
+                sendMessage(chatId, "🔍 Режим поиска в интернете выключен");
+                break;
+
+            case "conversation":
+                inConversationMode.put(chatId, false);
+                sendMessage(chatId, "💬 Режим общения выключен");
+                break;
+
+            default:
+                sendMessage(chatId, "ℹ️ Нет активных режимов для остановки");
+        }
     }
+    private void handleCallbackQuery(Update update) {
+        if (update == null || update.getCallbackQuery() == null) {
+            log.warn("Received null update or callback query");
+            return;
+        }
+
+        CallbackQuery callbackQuery = update.getCallbackQuery();
+        String callbackData = callbackQuery.getData();
+        Long chatId = callbackQuery.getMessage().getChatId();
+        User user = callbackQuery.getFrom();
+
+        try {
+            //log.info("Processing callback from {}: {}", user.getId(), callbackData); это логирование позволяет видеть выбранный вариант ответа.
+
+            // 1. Обработка RPS игры
+            if (callbackData.startsWith("rps_")) {
+                handleRpsGameCallback(callbackData, chatId);
+                answerCallbackQuery(callbackQuery.getId());
+                return;
+            }
+
+            // 2. Обработка вызовов
+            if (callbackData.startsWith("accept_rps_")) {
+                handleRpsChallenge(callbackData, user);
+                answerCallbackQuery(callbackQuery.getId());
+                return;
+            }
+
+            if (callbackData.equals("decline_rps")) {
+                declineRPSChallenge(user.getId());
+                answerCallbackQuery(callbackQuery.getId());
+                return;
+            }
+
+            // 3. Основные команды бота
+            switch (callbackData) {
+                case "restart_test":
+                    restartTest(chatId);
+                    break;
+                case "start_game":
+                    startNumberGame(chatId);
+                    break;
+                case "select_another_test":
+                    sendTestSelection(chatId, user);
+                    break;
+                case "main_menu":
+                    sendWelcomeMessage(chatId, user);
+                    break;
+                case "show_stats":
+                    sendUserStats(chatId);
+                    break;
+                case "next_question":
+                    handleNextQuestion(chatId);
+                    break;
+                default:
+                    // Обработка тестов и ответов
+                    if (callbackData.startsWith("test_")) {
+                        String testType = callbackData.substring(5); // "java" или "python"
+                        startTest(chatId, testType, user);
+                    } else {
+                        checkAnswer(chatId, callbackData);
+                    }
+            }
+
+            answerCallbackQuery(callbackQuery.getId());
+
+        } catch (Exception e) {
+            log.error("Callback processing error", e);
+            try {
+                AnswerCallbackQuery answer = new AnswerCallbackQuery(callbackQuery.getId());
+                answer.setText("⚠️ Ошибка обработки команды");
+                answer.setShowAlert(true);
+                execute(answer);
+            } catch (TelegramApiException ex) {
+                log.error("Failed to send error callback", ex);
+            }
+        }
+    }
+    private void handleRpsGameCallback(String callbackData, Long chatId) {
+        String action = callbackData.substring(4);
+        switch (action) {
+            case "rock":
+                processRPSMove(chatId, "0");
+                break;
+            case "scissors":
+                processRPSMove(chatId, "1");
+                break;
+            case "paper":
+                processRPSMove(chatId, "2");
+                break;
+            case "exit":
+                endRPSGame(chatId);
+                break;
+            default:
+                log.warn("Unknown RPS action: {}", action);
+        }
+    }
+    private void handleRpsChallenge(String callbackData, User user) {
+        Long initiatorId = Long.parseLong(callbackData.substring(11));
+        Long opponentId = user.getId();
+        acceptRPSChallenge(initiatorId, opponentId);
+    }
+
+    private void answerCallbackQuery(String callbackId) throws TelegramApiException {
+        execute(new AnswerCallbackQuery(callbackId));
+    }
+
+    private boolean checkActiveModes(Long chatId) {
+        String activeMode = getActiveMode(chatId);
+        if (activeMode != null) {
+            sendMessage(chatId, "⚠️ Сначала завершите текущий режим (" + activeMode + ") командой /stop");
+            return true;
+        }
+        return false;
+    }
+    private String getActiveMode(Long chatId) {
+        if (calculatorModes.getOrDefault(chatId, CalculatorMode.OFF) == CalculatorMode.ON) {
+            return "calculator";
+        }
+        if (gameModes.getOrDefault(chatId, GameMode.OFF) != GameMode.OFF) {
+            return "game";
+        }
+        if (Boolean.TRUE.equals(inInternetSearchMode.get(chatId))) {
+            return "internet";
+        }
+        if (Boolean.TRUE.equals(inConversationMode.get(chatId))) {
+            return "conversation";
+        }
+        return null;
+    }
+
     private void handleWeatherRequest(Long chatId, String text) {
         try {
             // Извлекаем название города из запроса
@@ -455,8 +1239,33 @@ public class Bot extends TelegramLongPollingBot {
             sendMessage(chatId, "Не удалось получить данные о погоде. Попробуйте позже или укажите другой город.");
         }
     }
+    private void exitCalculatorMode(Long chatId) {
+        calculatorModes.remove(chatId);
+        calculatorInputs.remove(chatId);
+        calculatorMessageIds.remove(chatId);
+        sendMessage(chatId, "🧮 Режим калькулятора завершен. " +
+                "Для повторного запуска введите /calculator");
+    }
+    private String getFullHistory(Long userId) {
+        List<TestHistory> history = testHistory.getOrDefault(userId, Collections.emptyList());
+        if (history.isEmpty()) {
+            return "История тестов пуста";
+        }
 
+        StringBuilder sb = new StringBuilder("📅 История тестов:\n");
+        for (TestHistory item : history) {
+            sb.append(String.format("%s: %s - %d/%d\n",
+                    item.getTestDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")),
+                    item.getTestType().toUpperCase(),
+                    item.getScore(),
+                    getQuestionsCount(item.getTestType())));
+        }
+        return sb.toString();
+    }
 
+    private int getQuestionsCount(String testType) {
+        return "java".equals(testType) ? javaQuestions.size() : pythonQuestions.size();
+    }
     private void sendUserStats(Long chatId) {
         Student student = activeUsers.get(chatId);
         if (student != null) {
@@ -632,7 +1441,12 @@ public class Bot extends TelegramLongPollingBot {
                         "/test - начать тест\n" +
                         "/chat - свободное общение\n" +
                         "/help - помощь\n" +
+                        "/game - игра угадай число.\n" +
+                        "/rps - игра в цуефа.\n" +
+                        "/internet - запросы в WIKI\n" +
+                        "/stats - статистика \n" +
                         "/weather - погода\n\n" +
+                        "Что бы в игру цуефа запросить игру /challenge!",
                         "Выберите что вам интересно!",
                 user.getFirstName());
         sendPhoto(chatId, photoPath, welcomeText);
@@ -644,7 +1458,10 @@ public class Bot extends TelegramLongPollingBot {
                 "1. Проводить тесты по Java и Python (/test)\n" +
                 "2. Просто общаться (/chat)\n" +
                 "3. Узнать свою статистику по тестам. (/stats)\n" +
-                "4. Делать запросы в википедию (/internet)\n\n" +
+                "4. Делать запросы в википедию (/internet)\n" +
+                "5. Игра угадай число (/game)\n" +
+                "6. Игра цуефа (/rps)\n" +
+                "7. Использовать калькулятор (/calculator)\n\n" +
                 "Во время теста вы можете прервать его и начать заново.\n" +
                 "Для выхода из режима общения напишите /stop";
         sendMessage(chatId, helpText);
@@ -669,35 +1486,73 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
 
-    private void handleCallbackQuery(Update update) {
-        String callbackData = update.getCallbackQuery().getData();
-        Long chatId = update.getCallbackQuery().getMessage().getChatId();
-        Message message = update.getCallbackQuery().getMessage();
+    private void endRPSGame(Long chatId) {
+        gameModes.remove(chatId);
+        rpsScores.remove(chatId);
+        lastMessageIds.remove(chatId);
+        rpsChallenges.remove(chatId); // Очищаем вызовы, если они были
+        sendMessage(chatId, "Игра завершена! Твой счёт: " + rpsScores.get(chatId) +
+                "\nЧтобы сыграть снова - напиши /rps");
+    }
 
+    //мини игра камень
+    private void acceptRPSChallenge(Long initiatorId, Long opponentId) {
         try {
-            if (callbackData.startsWith("test_")) {
-                startTest(chatId, callbackData, message);
-            } else if ("restart".equals(callbackData)) {
-                restartTest(chatId);
-            } else if ("next_question".equals(callbackData)) {
-                sendNextQuestion(chatId);
-            } else if ("start_chat".equals(callbackData)) {
-                startConversationMode(chatId);
-            } else {
-                checkAnswer(chatId, callbackData);
-            }
+            Student opponent = activeUsers.get(opponentId);
+
+            // Удаляем вызов
+            rpsChallenges.remove(initiatorId);
+
+            // Уведомления
+            sendMessage(initiatorId, "🎉 " + opponent.getFullName() + " принял ваш вызов! Начинаем игру...");
+            sendMessage(opponentId, "Вы приняли вызов! Начинаем игру...");
+
+            // Запускаем игру для обоих
+            startRPSGame(initiatorId);
+            startRPSGame(opponentId);
+
         } catch (Exception e) {
-            log.error("Ошибка обработки callback", e);
-            sendMessage(chatId, "Произошла ошибка. Пожалуйста, попробуйте снова.");
+            log.error("Ошибка принятия вызова", e);
         }
     }
 
-    private void startTest(Long chatId, String callbackData, Message message) {
-        String testType = callbackData.substring(5);
-        currentTestType.put(chatId, testType);
+    private void declineRPSChallenge(Long opponentId) {
+        try {
+            Long initiatorId = rpsChallenges.get(opponentId);
+            if (initiatorId != null) {
+                Student opponent = activeUsers.get(opponentId);
+                String opponentName = opponent != null ? opponent.getFullName() : "Игрок";
 
-        User user = message.getFrom();
-        Student student = new Student(user.getId(), user.getFirstName(), testType);
+                sendMessage(initiatorId, "❌ " + opponentName + " отклонил ваш вызов");
+                sendMessage(opponentId, "Вы отклонили вызов");
+
+                rpsChallenges.remove(initiatorId);
+            }
+        } catch (Exception e) {
+            log.error("Ошибка отклонения вызова", e);
+        }
+    }
+    //конец
+    private void handleNextQuestion(Long chatId) {
+        Student student = activeUsers.get(chatId);
+        if (student != null && student.getCurrentQuestionIndex() < student.getShuffledQuestions().size() - 1) {
+            sendQuestion(chatId, student.getCurrentQuestionIndex() + 1);
+        } else {
+            finishTest(chatId, student);
+        }
+    }
+
+    private void startTest(Long chatId, String testType, User user) {
+        // Создаем объект Student на основе User
+        Student student = new Student(
+                user.getId(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getUserName(),
+                testType
+        );
+
+        currentTestType.put(chatId, testType);
 
         List<Question> questions = "java".equals(testType) ? javaQuestions : pythonQuestions;
         questions.forEach(student::addQuestion);
@@ -710,32 +1565,46 @@ public class Bot extends TelegramLongPollingBot {
 
     private void sendQuestion(Long chatId, int questionIndex) {
         Student student = activeUsers.get(chatId);
-        if (student == null) return;
+        if (student == null) {
+            log.warn("Student not found for chatId: {}", chatId);
+            return;
+        }
 
-        List<Question> questions = student.getShuffledQuestions();
-        if (questionIndex < questions.size()) {
-            student.setCurrentQuestionIndex(questionIndex);
-            Question question = questions.get(questionIndex);
-            sendMessageWithOptions(chatId, question.getQuestionText(), question.getAnswers());
+        student.setCurrentQuestionIndex(questionIndex);
+        Question question = student.getCurrentQuestion();
+
+        if (question != null) {
+            String messageText = String.format("""
+            🧩 Вопрос %d/%d
+            %s
+            """,
+                    questionIndex + 1,
+                    student.getShuffledQuestions().size(),
+                    question.getQuestionText());
+
+            SendMessage message = new SendMessage();
+            message.setChatId(chatId.toString());
+            message.setText(messageText);
+            message.setReplyMarkup(KeyboardFactory.createOptionsKeyboard(question.getAnswers()));
+
+            try {
+                execute(message);
+            } catch (TelegramApiException e) {
+                log.error("Ошибка при отправке вопроса", e);
+            }
         } else {
             finishTest(chatId, student);
         }
     }
-
-    private void sendMessageWithOptions(Long chatId, String text, List<String> options) {
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId.toString());
-        message.setText(text);
-        message.setReplyMarkup(KeyboardFactory.createOptionsKeyboard(options));
-        sendMessage(message);
-    }
-
     private void checkAnswer(Long chatId, String selectedAnswer) {
         Student student = activeUsers.get(chatId);
         if (student == null) return;
 
         Question currentQuestion = student.getCurrentQuestion();
         if (currentQuestion == null) return;
+
+        // Сохраняем ответ пользователя
+        student.saveAnswer(selectedAnswer);
 
         boolean isCorrect = currentQuestion.isCorrectAnswer(selectedAnswer);
         if (isCorrect) {
@@ -759,61 +1628,122 @@ public class Bot extends TelegramLongPollingBot {
     }
 
     private void sendImageFromResources(Long chatId, String imagePath, String caption) {
-        try (InputStream imageStream = getClass().getClassLoader().getResourceAsStream(imagePath)) {
+        InputStream imageStream = null;
+        try {
+            imageStream = getClass().getClassLoader().getResourceAsStream(imagePath);
             if (imageStream == null) {
-                log.error("Изображение не найдено в ресурсах: {}", imagePath);
-                sendMessage(chatId, caption);
-                return;
+                throw new FileNotFoundException("Изображение не найдено в ресурсах: " + imagePath);
             }
 
-            SendPhoto photo = new SendPhoto();
-            photo.setChatId(chatId.toString());
-            photo.setPhoto(new InputFile(imageStream, "result.jpg"));
-            photo.setCaption(caption);
+            SendPhoto photo = SendPhoto.builder()
+                    .chatId(chatId.toString())
+                    .photo(new InputFile(imageStream, "result.jpg"))
+                    .caption(caption)
+                    .build();
 
             execute(photo);
-        } catch (Exception e) {
-            log.error("Ошибка при отправке изображения", e);
+        } catch (FileNotFoundException e) {
+            log.error("Изображение не найдено: {}", e.getMessage());
             sendMessage(chatId, caption);
+        } catch (TelegramApiException e) {
+            log.error("Ошибка Telegram API при отправке фото", e);
+            sendMessage(chatId, caption);
+        } finally {
+            if (imageStream != null) {
+                try {
+                    imageStream.close();
+                } catch (IOException e) {
+                    log.error("Ошибка при закрытии потока изображения", e);
+                }
+            }
         }
-    }
+        }
 
     private void finishTest(Long chatId, Student student) {
+        // Логируем завершение теста
         log.info("Пользователь завершил тест: {} {}", student.getFirstName(), student.getId());
 
-        // Отправляем подробные результаты теста
-        sendMessage(chatId, student.getTestResults());
+        // Формируем и отправляем результаты пользователю
+        String userResults = formatUserResults(student);
+        sendMessage(chatId, userResults);
 
-        // Отправка в группу (если нужно)
-        String groupMessage = String.format("%s %s завершил тест с %d правильными ответами.",
-                student.getId(), student.getFirstName(), student.getCorrectAnswersCount());
-        sendMessage(BotConfig.GROUP_ID, groupMessage);
+        // Отправляем меню действий
+        SendMessage menu = new SendMessage();
+        menu.setChatId(chatId.toString());
+        menu.setText("Тест завершен! Выберите действие:");
+        menu.setReplyMarkup(KeyboardFactory.createPostTestKeyboard());
+        sendMessage(menu);
 
-        // Клавиатура с опциями
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId.toString());
-        message.setText("Что вы хотите сделать дальше?");
-
-        InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-
-        rows.add(Collections.singletonList(
-                InlineKeyboardButton.builder()
-                        .text("Пройти тест заново")
-                        .callbackData("restart")
-                        .build()));
-
-        rows.add(Collections.singletonList(
-                InlineKeyboardButton.builder()
-                        .text("Свободное общение")
-                        .callbackData("start_chat")
-                        .build()));
-
-        keyboard.setKeyboard(rows);
-        message.setReplyMarkup(keyboard);
-
-        sendMessage(message);
+        // Отправляем результаты в группу
+        sendTestResultsToGroup(student);
     }
+
+    private String formatUserResults(Student student) {
+        StringBuilder sb = new StringBuilder();
+
+        // Основные результаты
+        sb.append("📊 Ваши результаты теста по ").append(student.getTestTypeDisplayName()).append("\n\n")
+                .append("✅ Правильных ответов: ").append(student.getCorrectAnswersCount()).append("/")
+                .append(student.getShuffledQuestions().size()).append(" (")
+                .append(String.format("%.1f", student.getSuccessPercentage())).append("%)\n")
+                .append("⏱ Время прохождения: ").append(student.getTestDuration()).append("\n\n");
+
+        // Детализация ответов
+        sb.append("🔍 Детализация:\n");
+        for (int i = 0; i < student.getShuffledQuestions().size(); i++) {
+            Question q = student.getShuffledQuestions().get(i);
+            String userAnswer = i < student.getUserAnswers().size() ?
+                    student.getUserAnswers().get(i) : "Нет ответа";
+            boolean isCorrect = q.isCorrectAnswer(userAnswer);
+
+            sb.append(i+1).append(". ").append(q.getQuestionText()).append("\n")
+                    .append("   Ваш ответ: ").append(userAnswer)
+                    .append(isCorrect ? " ✅\n" : " ❌\n")
+                    .append("   Правильно: ").append(q.getCorrectAnswer()).append("\n\n");
+        }
+
+        // Статистика по категориям
+        Map<String, String> categoryStats = student.getCategoryStatistics();
+        if (!categoryStats.isEmpty()) {
+            sb.append("📈 Статистика по категориям:\n");
+            categoryStats.forEach((category, stats) ->
+                    sb.append("• ").append(category).append(": ").append(stats).append("\n"));
+        }
+
+        return sb.toString();
+    }
+
+    private void sendTestResultsToGroup(Student student) {
+        // Основная информация о результате
+        String mainInfo = String.format(
+                "📌 Новый результат теста по %s\n" +
+                        "👤 Пользователь: %s\n" +
+                        "🆔 ID: %d\n" +
+                        "⏱ Время: %s\n" +
+                        "✅ Результат: %d/%d (%.1f%%)",
+                student.getTestTypeDisplayName(),
+                student.getFullName(),
+                student.getId(),
+                student.getTestDuration(),
+                student.getCorrectAnswersCount(),
+                student.getShuffledQuestions().size(),
+                student.getSuccessPercentage()
+        );
+
+        // Статистика по категориям
+        String categoryStats = "";
+        Map<String, String> stats = student.getCategoryStatistics();
+        if (!stats.isEmpty()) {
+            categoryStats = "\n\n📊 Статистика по категориям:\n" +
+                    stats.entrySet().stream()
+                            .map(e -> String.format("• %s: %s", e.getKey(), e.getValue()))
+                            .collect(Collectors.joining("\n"));
+        }
+
+        // Отправляем сообщение в группу
+        sendMessage(BotConfig.GROUP_ID, mainInfo + categoryStats);
+
+        }
 
 
     private void sendNextQuestionButton(Long chatId) {
