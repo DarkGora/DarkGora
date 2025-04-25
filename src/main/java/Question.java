@@ -1,21 +1,36 @@
 import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.log4j.Log4j2;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-
+@Setter
 @Getter
+@Log4j2
 public class Question {
     private final String questionText;
     private final List<String> answers;
     private final int correctAnswerIndex;
+    private final String category;
 
     public Question(String questionText, List<String> answers, int correctAnswerIndex) {
+        this(questionText, answers, correctAnswerIndex, "Общие"); // Категория по умолчанию
+    }
+
+    public Question(String questionText, List<String> answers,
+                    int correctAnswerIndex, String category) {
         this.questionText = validateQuestionText(questionText);
         this.answers = validateAndPrepareAnswers(answers);
+        this.category = category;
         this.correctAnswerIndex = validateCorrectIndex(correctAnswerIndex, answers.size());
+        if (correctAnswerIndex < 0 || correctAnswerIndex >= answers.size()) {
+            throw new IllegalArgumentException("Недопустимый индекс правильного ответа");
+        }
     }
+
+
 
     private String validateQuestionText(String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -54,13 +69,6 @@ public class Question {
         }
         return index;
     }
-
-    public boolean isCorrectAnswer(int answerIndex) {
-        return answerIndex >= 0 &&
-                answerIndex < answers.size() &&
-                answerIndex == correctAnswerIndex;
-    }
-
     public boolean isCorrectAnswer(String answer) {
         if (answer == null) return false;
         return answer.trim().equalsIgnoreCase(answers.get(correctAnswerIndex).trim());
