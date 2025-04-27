@@ -40,6 +40,7 @@ public class Student {
         this.userName = userName;
         this.testType = validateTestType(testType);
         this.testStartTime = LocalDateTime.now();
+        this.shuffledQuestions = new ArrayList<>();
     }
 
     // Валидация данных
@@ -57,33 +58,15 @@ public class Student {
         return normalized;
     }
 
-    public Optional<Question> getQuestion(int index) {
-        return Optional.ofNullable(shuffledQuestions)
-                .filter(q -> index >= 0 && index < q.size())
-                .map(q -> q.get(index));
-    }
-
-    public String getProgress() {
-        return String.format("%d/%d",
-                currentQuestionIndex + 1,
-                shuffledQuestions.size());
-    }
-
-    public boolean moveToQuestion(int index) {
-        if (isValidQuestionIndex(index)) {
-            this.currentQuestionIndex = index;
-            return true;
-        }
-        log.warn("Попытка установить недопустимый индекс вопроса: {}", index);
-        return false;
-    }
-
     public void setCurrentQuestionIndex(int index) {
-        if (index >= 0 && index < shuffledQuestions.size()) {
-            this.currentQuestionIndex = index;
-        } else {
-            throw new IllegalArgumentException("Invalid question index: " + index);
+        if (shuffledQuestions == null || shuffledQuestions.isEmpty()) {
+            throw new IllegalStateException("Нет доступных вопросов для теста");
         }
+        if (index < 0 || index >= shuffledQuestions.size()) {
+            throw new IllegalArgumentException("Invalid question index: " + index +
+                    ". Допустимый диапазон: 0-" + (shuffledQuestions.size() - 1));
+        }
+        this.currentQuestionIndex = index;
     }
     // В классе Student
     public String getDisplayName() {
