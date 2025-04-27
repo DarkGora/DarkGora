@@ -85,15 +85,4 @@ public class Main {
             return false;
         }
     }
-
-    private static boolean isTelegramApiAvailable() {
-        Proxy proxy = new Proxy(Proxy.Type.SOCKS, new InetSocketAddress(PROXY_HOST, PROXY_PORT));
-        try (Socket socket = new Socket(proxy)) {
-            socket.connect(new InetSocketAddress(TELEGRAM_API_HOST, TELEGRAM_API_PORT), CONNECTION_TIMEOUT_MS);
-            return true;
-        } catch (Exception e) {
-            log.error("Telegram API connection test failed: {}", e.getMessage());
-            return false;
-        }
-    }
 }

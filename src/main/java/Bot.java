@@ -1,8 +1,6 @@
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 import lombok.extern.log4j.Log4j2;
+import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -22,9 +20,11 @@ import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 import java.io.*;
 import java.io.File;
+import java.net.URLEncoder;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static java.util.Map.entry;
@@ -37,10 +37,12 @@ public class Bot extends TelegramLongPollingBot {
     private final Map<Long, String> currentTestType = new HashMap<>();
     private final Map<Long, Boolean> inConversationMode = new HashMap<>();
     private final Map<Long, Boolean> inInternetSearchMode = new HashMap<>();
+    private static final OkHttpClient HTTP_CLIENT = new OkHttpClient();
+    private static final Gson GSON = new Gson();
+    private static final String WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather";
+    //часть калькулятора
 
     // Базы данных
-    private final List<Question> javaQuestions = new ArrayList<>();
-    private final List<Question> pythonQuestions = new ArrayList<>();
     private final Map<String, String> conversationResponses = initConversationResponses();
     private final Map<String, String> techAnswers = initTechAnswers();
     private final Map<String, String> codeExamples = initCodeExamples();
@@ -62,11 +64,12 @@ public class Bot extends TelegramLongPollingBot {
     private final Map<Long, Integer> lastMessageIds = new ConcurrentHashMap<>();
     // Добавляем новые поля для системы вызовов
     private Map<Long, Boolean> awaitingChallengeTarget = new ConcurrentHashMap<>();
-
+    // перенос вопросов в другой класс
+    private final QuestionRepository questionRepository;
 
     public Bot(DefaultBotOptions options) {
         super(options);
-        initializeQuestions();
+        this.questionRepository = new QuestionRepository();
     }
     private enum CalculatorMode {
         OFF,
@@ -76,103 +79,86 @@ public class Bot extends TelegramLongPollingBot {
         OFF, GUESS_NUMBER, RPS
     }
 
-    private void initializeQuestions() {
-        //  Java вопросов
-        javaQuestions.addAll(Arrays.asList(
-                new Question("Как изначально назывался язык Java?",
-                        List.of("Oak", "Tree", "Brich", "Pine"), 0),
-                new Question("Кто создал Джаву",
-                        List.of("Гоплинг", "Гослинг", "Готлинг", "Годлинг"), 1),
-                new Question("Как изначально назывался язык java", List.of("Oak", "Tree", "Brich", "Pine"), 0),
-                new Question("Кто создал Джаву", List.of("Гоплинг", "Гослинг", "Готлинг", "Годлинг"), 1),
-                new Question("Сколько байт памяти занимает тип переменных", List.of("2", "4", "8", "16"), 2),
-                new Question("Два важных ключевых слова, используемых в циклах", List.of("Break и Contine", "Break и Add", "Break и loop", "loop и Add"), 0),
-                new Question("Какие данные возвращает метод  main()", List.of("String", "Int", "Не может возвращать данные", "Указанные в скобках"), 2),
-                new Question("Сколько методов у класса  Object", List.of("8", "9", "11", "12"), 2),
-                new Question("Выберите несуществующий метод Object", List.of("String toString()", "Object clone()", "int hashCode()", "void patify()"), 3),
-                new Question("Какие элементы может содержать класс", List.of("Поля", "Конструкоры", "Методы", "Интерфейсы", "Все вышеперечислонные"), 4),
-                new Question("Что означает этот метасимвол регулярных выражений -$ ", List.of("Начало строки", "Конец строки", "Начало слова", "Конец ввода"), 1),
-                new Question("Что озн  ачает этот метасимвол регулярных выражений -\s ", List.of("Цифровой символ", "Не цифровой символ", "символ пробела", "бкувенно-цифровой символ", "Все вышеперечислонные"), 2),
-                new Question("Какой из следующих типов данных является примитивным в Java?", List.of("String", "Integer", "int", "ArrayList"), 2),
-                new Question("Какой из следующих операторов используется для сравнения двух значений в Java?", List.of("=", "==", "===", "!="), 1),
-                new Question("Какой метод используется для запуска программы в Java?", List.of("main()", "start()", "run()", "startJava()"), 0),
-                new Question("Как останосить case?", List.of("break", "stop", "stopline", "short"), 3),
-                new Question("Какой из следующих интерфейсов используется для работы с коллекциями в Java?", List.of("List", "Map", "Eilast", "Collection"), 1),
-                new Question("Какой модификатор доступа делает член класса доступным только внутри этого класса?", List.of("public", "String", "private", "ModerPriv"), 0),
-                new Question("Что такое исключение в Java?", List.of("Ошибка компиляции", "Исключение обьекта путем команд", "Doms", "Где?"), 3),
-                new Question("Какой из следующих классов является частью Java Collections Framework?", List.of("HashMap", "Scanner", "Framework", "Collection"), 1),
-                new Question("Какой оператор используется для создания нового объекта в Java?", List.of("new", "object", "ineselert", "int"), 1),
-                new Question("Какой из следующих методов позволяет получить длину массива в Java?", List.of("length()", "size()", "getlength()", "length"), 0),
-                new Question("В каком году основали язык java?", List.of("1995", "1990", "1997", "2000"), 0),
-                new Question("Назовите фамилию разработчика языка java?", List.of("Паскаль", "Эйх", "Гослинг", "Россум"), 2),
-                new Question("Кто был первым программистом?", List.of("Ari", "Ada", "Кэй", "Эйх"), 1),
-                new Question("Как называется виртуальная машина, которая позволяет компьютеру запускать программы?", List.of("JVM", "JDK", "JRE", "JIT"), 0),
-                new Question("Первоначальное название языка java?", List.of("Oak", "Delphi", "Php", "Perl"), 0)
-        ));
-
-        // Инициализация Python вопросов
-        pythonQuestions.addAll(Arrays.asList(
-                new Question("Какой тип данных в Python является неизменяемым?",
-                        List.of("Список", "Словарь", "Кортеж", "Множество"), 2),
-                new Question("Какой оператор используется для возведения в степень в Python?",
-                        List.of("^", "**", "*", "//"), 1)
-        ));
-    }
-
     // Метод для поиска в интернете (например, через Wikipedia API)
     private String searchInternet(String query) {
-        OkHttpClient client = new OkHttpClient();
-        String url = "https://en.wikipedia.org/w/api.php" +
+        // Создаем HTTP-клиент с таймаутами для надежности
+        OkHttpClient client = new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .build();
+
+        // Кодируем запрос для URL
+        String encodedQuery;
+        try {
+            encodedQuery = URLEncoder.encode(query, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return "Ошибка кодирования запроса: " + e.getMessage();
+        }
+
+        // Формируем URL запроса к русской Википедии
+        String url = "https://ru.wikipedia.org/w/api.php" +
                 "?action=query" +
                 "&format=json" +
                 "&list=search" +
-                "&srsearch=" + query +
+                "&srprop=snippet" +
+                "&srsearch=" + encodedQuery +
                 "&srlimit=1"; // Ограничение до одного результата
 
         Request request = new Request.Builder()
                 .url(url)
+                .header("User-Agent", "MyApp/1.0") // Добавляем User-Agent для идентификации
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
+            // Проверяем успешность запроса
             if (!response.isSuccessful()) {
-                return "Ошибка при запросе к API: " + response.code();
+                return "Ошибка при запросе к API Википедии. Код: " + response.code();
             }
 
             // Парсим JSON-ответ
             String jsonData = response.body().string();
             JsonObject jsonObject = JsonParser.parseString(jsonData).getAsJsonObject();
+
+            // Проверяем наличие блока query в ответе
+            if (!jsonObject.has("query")) {
+                return "Не удалось найти информацию по запросу: " + query;
+            }
+
             JsonObject queryObject = jsonObject.getAsJsonObject("query");
             JsonArray searchResults = queryObject.getAsJsonArray("search");
 
             if (searchResults.size() > 0) {
+                // Обрабатываем первый результат поиска
                 JsonObject firstResult = searchResults.get(0).getAsJsonObject();
                 String title = firstResult.get("title").getAsString();
                 String snippet = firstResult.get("snippet").getAsString();
                 String pageId = firstResult.get("pageid").getAsString();
 
-                // Формируем ссылку на статью
-                String articleUrl = "https://en.wikipedia.org/?curid=" + pageId;
+                // Формируем читаемую ссылку на статью
+                String articleUrl = "https://ru.wikipedia.org/?curid=" + pageId;
 
-                return "Результат по запросу '" + query + "':\n" +
-                        "Название: " + title + "\n" +
-                        "Описание: " + cleanSnippet(snippet) + "\n" +
-                        "Читать полностью: " + articleUrl;
+                return "🔍 Результат поиска по запросу '" + query + "':\n\n" +
+                        "📌 " + title + "\n\n" +
+                        "📝 " + cleanSnippet(snippet) + "\n\n" +
+                        "🌐 Читать полностью: " + articleUrl +"\n\n"+
+                        "Меню /help";
             } else {
-                return "Ничего не найдено по запросу: " + query;
+                return "😕 По вашему запросу '" + query + "' ничего не найдено.";
             }
+        } catch (IOException e) {
+            return "⚠ Ошибка соединения: " + e.getMessage();
+        } catch (JsonSyntaxException e) {
+            return "⚠ Ошибка обработки ответа от Википедии";
         } catch (Exception e) {
-            return "Ошибка при выполнении запроса: " + e.getMessage();
+            return "⚠ Неожиданная ошибка: " + e.getMessage();
         }
     }
-
-    /**
-     * Очищает сниппет от HTML-тегов.
-     */
+    // Метод для очистки HTML-тегов из сниппета
     private String cleanSnippet(String snippet) {
-        return snippet.replaceAll("<[^>]*>", ""); // Удаляем HTML-теги
+        // Удаляем HTML-теги и HTML-сущности
+        return snippet.replaceAll("<[^>]+>", "").replaceAll("&[^;]+;", "");
     }
-
-    // Инициализация баз ответов
+    // Свободное общение ответы
     private Map<String, String> initConversationResponses() {
         return Map.ofEntries(
                 entry("привет", "Привет! Я бот-помощник по Java и Python. Как я могу помочь?"),
@@ -331,39 +317,56 @@ public class Bot extends TelegramLongPollingBot {
                 })
         );
     }
-
-    private String getWeather(String city) throws Exception {
-        OkHttpClient client = new OkHttpClient();
-        String url = "https://api.openweathermap.org/data/2.5/weather?q=" + city + "&appid=" + WEATHER + "&units=metric&lang=ru";
-
-        Request request = new Request.Builder()
-                .url(url)
-                .build();
-
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                throw new Exception("Ошибка при запросе к API OpenWeatherMap");
-            }
-
-            String responseBody = response.body().string();
-            Gson gson = new Gson();
-            JsonObject jsonObject = gson.fromJson(responseBody, JsonObject.class);
-
-            if (jsonObject.has("main")) {
-                String weatherDescription = jsonObject.getAsJsonArray("weather").get(0).getAsJsonObject().get("description").getAsString();
-                double temperature = jsonObject.getAsJsonObject("main").get("temp").getAsDouble();
-                int humidity = jsonObject.getAsJsonObject("main").get("humidity").getAsInt();
-
-                return "Погода в городе " + city + ":\n" +
-                        "Температура: " + String.format("%.1f", temperature) + "°C\n" +
-                        "Влажность: " + humidity + "%\n" +
-                        "Описание: " + weatherDescription;
-            } else {
-                return "Город не найден.";
-            }
-        }
+//Погода
+private String getWeather(String city) throws Exception {
+    if (city == null || city.trim().isEmpty()) {
+        throw new IllegalArgumentException("Название города не может быть пустым");
     }
 
+    HttpUrl.Builder urlBuilder = HttpUrl.parse(WEATHER_API_URL).newBuilder()
+            .addQueryParameter("q", city)
+            .addQueryParameter("appid", WEATHER)
+            .addQueryParameter("units", "metric")
+            .addQueryParameter("lang", "ru");
+
+    Request request = new Request.Builder()
+            .url(urlBuilder.build())
+            .build();
+
+    try (Response response = HTTP_CLIENT.newCall(request).execute()) {
+        if (!response.isSuccessful()) {
+            throw new IOException("Ошибка API: " + response.code() + " - " + response.message());
+        }
+
+        String responseBody = response.body().string();
+        JsonObject jsonObject = GSON.fromJson(responseBody, JsonObject.class);
+
+        if (!jsonObject.has("weather") || !jsonObject.has("main")) {
+            return "Город не найден или данные недоступны.";
+        }
+
+        JsonObject mainData = jsonObject.getAsJsonObject("main");
+        JsonObject weatherData = jsonObject.getAsJsonArray("weather").get(0).getAsJsonObject();
+
+        String weatherDescription = weatherData.get("description").getAsString();
+        double temperature = mainData.get("temp").getAsDouble();
+        int humidity = mainData.get("humidity").getAsInt();
+
+        return String.format(
+                "Погода в городе %s:\n" +
+                        "Температура: %.1f°C\n" +
+                        "Влажность: %d%%\n" +
+                        "Описание: %s\n\n" +
+                        "Чтобы вернуться в меню, используй команду /help",
+                city, temperature, humidity, weatherDescription
+        );
+    } catch (JsonSyntaxException e) {
+        throw new Exception("Ошибка при разборе ответа от сервера", e);
+    } catch (IOException e) {
+        throw new Exception("Ошибка при подключении к серверу погоды", e);
+    }
+}
+    //Калькулятор
     private void startCalculatorMode(Long chatId) {
         if (checkActiveModes(chatId)) return;
         calculatorModes.put(chatId, CalculatorMode.ON);
@@ -591,7 +594,6 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
     //мини игра
-
     private void startNumberGame(Long chatId) {
         // Сначала сбросим предыдущую игру, если была
         resetGame(chatId);
@@ -981,7 +983,7 @@ public class Bot extends TelegramLongPollingBot {
         // Можно добавить логику обработки редактированных сообщений
         log.info("Message edited in chat {}: {}", chatId, editedMessage.getText());
     }
-
+    //Команды /start - пример
     private void handleCommand(Long chatId, String command, User user) {
         switch (command) {
             case "/start":
@@ -1038,7 +1040,8 @@ public class Bot extends TelegramLongPollingBot {
                 }
                 break;
             case "/weather":
-                sendMessage(chatId,"Введите: погода 'город' ");
+                sendMessage(chatId,"Пример : \n\n" +
+                        "Погода Брест ");
                 break;
             case "/calculator":
                 if (calculatorModes.getOrDefault(chatId, CalculatorMode.OFF) == CalculatorMode.ON) {
@@ -1054,6 +1057,7 @@ public class Bot extends TelegramLongPollingBot {
                 sendMessage(chatId, "Неизвестная команда. Попробуйте /help");
         }
     }
+    // Команды на /stop
     private void handleStopCommand(Long chatId) {
         String activeMode = getActiveMode(chatId);
 
@@ -1146,14 +1150,14 @@ public class Bot extends TelegramLongPollingBot {
                     handleNextQuestion(chatId);
                     break;
                 default:
-                    // Обработка тестов и ответов
                     if (callbackData.startsWith("test_")) {
-                        String testType = callbackData.substring(5); // "java" или "python"
+                        String testType = callbackData.substring(5);
                         startTest(chatId, testType, user);
                     } else {
                         checkAnswer(chatId, callbackData);
                     }
             }
+
 
             answerCallbackQuery(callbackQuery.getId());
 
@@ -1264,7 +1268,7 @@ public class Bot extends TelegramLongPollingBot {
     }
 
     private int getQuestionsCount(String testType) {
-        return "java".equals(testType) ? javaQuestions.size() : pythonQuestions.size();
+        return questionRepository.getQuestionsCount(testType);
     }
     private void sendUserStats(Long chatId) {
         Student student = activeUsers.get(chatId);
@@ -1428,11 +1432,6 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
 
-    private void stopConversationMode(Long chatId) {
-        inConversationMode.remove(chatId);
-        sendMessage(chatId, "Режим свободного общения выключен. Для выбора теста напишите /test");
-    }
-
     private void sendWelcomeMessage(Long chatId, User user) {
         String photoPath = "images/1697737128_flomaster-top-p-krutie-risunki-simpsoni-vkontakte-1.jpg";
         String welcomeText = String.format(
@@ -1543,37 +1542,44 @@ public class Bot extends TelegramLongPollingBot {
     }
 
     private void startTest(Long chatId, String testType, User user) {
-        // Создаем объект Student на основе User
-        Student student = new Student(
-                user.getId(),
-                user.getFirstName(),
-                user.getLastName(),
-                user.getUserName(),
-                testType
-        );
+        List<Question> questions = "java".equals(testType)
+                ? questionRepository.getJavaQuestions()
+                : questionRepository.getPythonQuestions();
 
-        currentTestType.put(chatId, testType);
+        if (questions.isEmpty()) {
+            sendMessage(chatId, "⚠️ В данный момент нет доступных вопросов для теста по " +
+                    ("java".equals(testType) ? "Java" : "Python"));
+            return;
+        }
 
-        List<Question> questions = "java".equals(testType) ? javaQuestions : pythonQuestions;
+        Student student = new Student(user.getId(), user.getFirstName(), testType);
         questions.forEach(student::addQuestion);
         student.shuffleQuestions();
 
         activeUsers.put(chatId, student);
+        currentTestType.put(chatId, testType);
+
         sendMessage(chatId, "Выбран тест по " + ("java".equals(testType) ? "Java" : "Python") + ". Начинаем!");
-        sendQuestion(chatId, 0);
+        sendQuestion(chatId, 0); // Теперь здесь безопасно, так как проверили questions.isEmpty()
     }
 
     private void sendQuestion(Long chatId, int questionIndex) {
         Student student = activeUsers.get(chatId);
         if (student == null) {
             log.warn("Student not found for chatId: {}", chatId);
+            sendMessage(chatId, "⚠️ Ошибка: не найден активный тест");
             return;
         }
 
-        student.setCurrentQuestionIndex(questionIndex);
-        Question question = student.getCurrentQuestion();
+        try {
+            student.setCurrentQuestionIndex(questionIndex);
+            Question question = student.getCurrentQuestion();
 
-        if (question != null) {
+            if (question == null) {
+                sendMessage(chatId, "⚠️ Вопрос не найден");
+                return;
+            }
+
             String messageText = String.format("""
             🧩 Вопрос %d/%d
             %s
@@ -1587,13 +1593,10 @@ public class Bot extends TelegramLongPollingBot {
             message.setText(messageText);
             message.setReplyMarkup(KeyboardFactory.createOptionsKeyboard(question.getAnswers()));
 
-            try {
-                execute(message);
-            } catch (TelegramApiException e) {
-                log.error("Ошибка при отправке вопроса", e);
-            }
-        } else {
-            finishTest(chatId, student);
+            execute(message);
+        } catch (Exception e) {
+            log.error("Ошибка при отправке вопроса", e);
+            sendMessage(chatId, "⚠️ Произошла ошибка при загрузке вопроса");
         }
     }
     private void checkAnswer(Long chatId, String selectedAnswer) {
@@ -1772,13 +1775,6 @@ public class Bot extends TelegramLongPollingBot {
         }
     }
 
-    private void sendNextQuestion(Long chatId) {
-        Student student = activeUsers.get(chatId);
-        if (student != null) {
-            sendQuestion(chatId, student.getCurrentQuestionIndex() + 1);
-        }
-    }
-
     private void sendMessage(SendMessage message) {
         try {
             execute(message);
@@ -1793,7 +1789,7 @@ public class Bot extends TelegramLongPollingBot {
         message.setText(text);
         sendMessage(message);
     }
-
+    //фото
     public void sendPhoto(Long chatId, String filePath, String caption) {
         InputStream is = null;
         try {
