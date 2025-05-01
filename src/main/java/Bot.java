@@ -9,6 +9,7 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.*;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -21,6 +22,7 @@ import javax.script.ScriptException;
 import java.io.*;
 import java.io.File;
 import java.net.URLEncoder;
+import java.text.DecimalFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -518,7 +520,7 @@ private String getWeather(String city) throws Exception {
                         String formattedResult = formatResult(result);
                         calculatorInputs.put(chatId, formattedResult);
                         updateCalculatorDisplay(chatId, "Результат: " + formattedResult +
-                                "\n\nДля выхода /stop");
+                                "\n\nДля выхода /stop или /help");
                     }
                     break;
                 case "C":
